@@ -29,8 +29,9 @@ export function UserMenu() {
 
   const handleLogout = () => {
     logout()
-    signOut({ redirect: false })
-    router.refresh()
+    signOut({ redirect: false }).then(() => {
+      router.push("/auth/login")
+    })
   }
 
   return (
@@ -87,7 +88,7 @@ export function UserMenu() {
           >
             <DropdownMenu.Item
               className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 outline-none"
-              onSelect={() => router.push("/perfil")}
+              onSelect={() => router.push("/profissional")}
             >
               <User size={16} />
               Meu perfil

@@ -22,6 +22,11 @@ export function Navbar() {
         return null
     }
 
+    // Ocultar navbar nas áreas Clientes e Profissional (têm barra própria)
+    if (pathname?.startsWith('/clientes') || pathname?.startsWith('/profissional')) {
+        return null
+    }
+
     return (
         <nav className="bg-white border-b border-gray-200 fixed w-full z-50 top-0 ">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 mt-4 ">
