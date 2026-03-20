@@ -11,6 +11,17 @@ type Category =
   | "Pintor"
   | "Jardineiro";
 
+const CATEGORY_FILTERS = [
+  "Todos",
+  "Diarista",
+  "Eletricista",
+  "Encanador",
+  "Pintor",
+  "Jardineiro",
+] as const;
+
+type CategoryFilter = (typeof CATEGORY_FILTERS)[number];
+
 interface Professional {
   id: number;
   name: string;
@@ -45,7 +56,7 @@ const professionals: Professional[] = Array.from({ length: 150 }).map(
 export default function ProfessionalList() {
   const [visible, setVisible] = useState(ITEMS_PER_PAGE);
   const [selectedCategory, setSelectedCategory] =
-    useState<Category | "Todos">("Todos");
+    useState<CategoryFilter>("Todos");
 
   // 🔎 Filtro por profissão
   const filteredProfessionals = useMemo(() => {
@@ -61,18 +72,11 @@ export default function ProfessionalList() {
     <div className="flex flex-col items-center gap-6 w-full max-w-7xl mx-auto px-4">
       {/* 🎯 FILTRO PROFISSÕES */}
       <div className="flex flex-wrap gap-3 justify-center">
-        {[
-          "Todos",
-          "Diarista",
-          "Eletricista",
-          "Encanador",
-          "Pintor",
-          "Jardineiro",
-        ].map((cat) => (
+        {CATEGORY_FILTERS.map((cat) => (
           <button
             key={cat}
             onClick={() => {
-              setSelectedCategory(cat as any);
+              setSelectedCategory(cat);
               setVisible(ITEMS_PER_PAGE);
             }}
             className={`px-4 py-2 rounded-md text-sm transition ${

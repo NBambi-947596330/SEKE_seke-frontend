@@ -69,7 +69,8 @@ export function ItemLogin() {
               id: u?.id ?? "",
               name: u?.name ?? trimmedEmail.split("@")[0],
               email: u?.email ?? trimmedEmail,
-              image: u?.image,
+              // Prioriza avatar retornado pela API, com fallback para image
+              image: (u as unknown as { avatar?: string })?.avatar ?? u?.image,
             }
             window.sessionStorage.setItem("user_data", JSON.stringify(userData))
           }

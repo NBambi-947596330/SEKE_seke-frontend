@@ -21,11 +21,27 @@ export function DashboardHeader() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
 
-  const handleLogout = () => {
-    logout()
-    signOut({ redirect: false }).then(() => {
+  const handleLogout = async () => {
+    const token =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("auth_token")
+        : null
+
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+    } catch (error) {
+      console.error("Erro ao terminar sessão na API", error)
+    } finally {
+      logout()
+      await signOut({ redirect: false })
       router.push("/auth/login")
-    })
+    }
   }
 
   const messagesHref = pathname?.startsWith("/clientes") ? "/clientes/mensagens" : "/profissional"

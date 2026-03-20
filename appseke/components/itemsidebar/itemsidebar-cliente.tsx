@@ -1,6 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -30,6 +31,13 @@ import {
 import { DashboardHeader } from "@/components/itemnavbar/dashboard-header"
 import ItemChatWidget from "@/components/itemChatWidget/itemChatWidget"
 
+interface StoredUserData {
+  id: string | number
+  name: string
+  email: string
+  image?: string
+}
+
 interface SidebarClienteProps {
   children: ReactNode
 }
@@ -38,27 +46,33 @@ export default function SidebarCliente({ children }: SidebarClienteProps) {
   const pathname = usePathname()
   const isChatPage = pathname === "/clientes/mensagens"
 
+  const [user, setUser] = useState<StoredUserData | null>(null)
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const raw = window.sessionStorage.getItem("user_data")
+    if (!raw) return
+
+    try {
+      const parsed = JSON.parse(raw) as StoredUserData
+      setTimeout(() => {
+        setUser(parsed)
+      }, 0)
+    } catch {
+      // se der erro ao parsear, ignora e mantém avatar padrão
+    }
+  }, [])
+
   return (
     <SidebarProvider defaultOpen>
       <Sidebar variant="inset" collapsible="icon">
-        {/* HEADER (Perfil Cliente) */}
+        {/* HEADER (sem avatar, apenas título da área se quiser futuramente) */}
         <SidebarHeader className="p-4">
-          <div className="flex items-center gap-3">
-            <Image
-              src="/avatar.jpg"
-              alt="Cliente"
-              width={40}
-              height={40}
-              className="rounded-full"
-            />
-            <div className="flex flex-col leading-tight">
-              <span className="font-semibold text-sm">
-                Cliente
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Área do Cliente
-              </span>
-            </div>
+          <div className="flex flex-col leading-tight">
+            <span className="font-semibold text-sm">
+              Área do Cliente
+            </span>
           </div>
         </SidebarHeader>
 

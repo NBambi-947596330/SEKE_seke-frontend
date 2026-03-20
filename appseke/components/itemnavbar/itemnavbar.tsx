@@ -22,8 +22,13 @@ export function Navbar() {
         return null
     }
 
-    // Ocultar navbar nas áreas Clientes e Profissional (têm barra própria)
-    if (pathname?.startsWith('/clientes') || pathname?.startsWith('/profissional')) {
+    // Ocultar navbar nas áreas que usam sidebar/topbar própria
+    if (
+        pathname?.startsWith('/clientes') ||
+        pathname?.startsWith('/profissional') ||
+        pathname?.startsWith('/perfil') ||
+        pathname?.startsWith('/configuracoes')
+    ) {
         return null
     }
 
@@ -82,9 +87,9 @@ export function Navbar() {
                                         <Button
                                             onClick={() => router.push('/auth/login')}
                                             variant="outline"
-                                            className="hover:bg-blue-50 cursor-pointer h-12 w-30 border-none"
+                                            className="cursor-pointer h-12 w-30 border-none"
                                         >
-                                            Login
+                                            Entrar
                                         </Button>
                                         <Button
                                             onClick={() => router.push('/auth/register')}

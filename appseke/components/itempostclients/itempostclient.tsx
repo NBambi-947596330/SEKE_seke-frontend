@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { User, MapPin, Phone } from 'lucide-react';
 import { lightTheme } from '@/style/light';
 
-interface SolicitacaoClienteProps {
+export interface SolicitacaoClienteProps {
   nome?: string;
   avatar?: string;
   tempoSolicitacao?: string;

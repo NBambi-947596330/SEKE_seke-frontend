@@ -10,41 +10,46 @@ export const lightTheme: Theme = {
     surface: "#F9FAFB",
     text: "#111827",
     textSecondary: "#6B7280",
-    border: "#ECEFF3",
+    border: "#E5E7EB",
     success: "#10B981",
     error: "#EF4444",
-    warning: "#F59E0B"
+    warning: "#F59E0B",
   },
 
   typography: {
-    fontFamily: "'Inter', sans-serif",
+    // Mantém uma única família de fonte para todo o produto
+    fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     fontSize: {
-      small: "12px",
-      medium: "14px",
-      large: "18px",
-      xlarge: "24px"
+      small: "14px", // Small
+      body: "16px", // Body
+      h3: "20px", // H3
+      h2: "24px", // H2
+      h1: "32px", // H1
     },
     fontWeight: {
       regular: 400,
       medium: 500,
-      bold: 700
-    }
+      semibold: 600,
+      bold: 700,
+    },
   },
 
   spacing: {
     xs: "4px",
     sm: "8px",
-    md: "16px",
-    lg: "24px",
-    xl: "32px"
+    md: "12px",
+    lg: "16px",
+    xl: "24px",
+    "2xl": "32px",
+    "3xl": "48px",
   },
 
   borderRadius: {
     small: "4px",
     medium: "8px",
     large: "16px",
-    round: "9999px"
-  }
+    round: "9999px",
+  },
 }
 
 export default lightTheme

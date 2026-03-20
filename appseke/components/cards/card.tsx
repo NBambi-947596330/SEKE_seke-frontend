@@ -2,8 +2,6 @@
 
 import { lightTheme } from "@/style"
 
-
-
 interface CardProps {
   title: string
   children: React.ReactNode
@@ -13,21 +11,21 @@ export const Card = ({ title, children }: CardProps) => {
   return (
     <div
       style={{
-        backgroundColor: lightTheme.colors.primary,
-        padding: lightTheme.spacing.md,
+        backgroundColor: lightTheme.colors.surface,
+        padding: lightTheme.spacing.xl,
         borderRadius: lightTheme.borderRadius.medium,
         border: `1px solid ${lightTheme.colors.border}`,
         fontFamily: lightTheme.typography.fontFamily,
-        width: "300px",
+        maxWidth: "320px",
       }}
     >
       <h3
         style={{
           margin: 0,
-          marginBottom: lightTheme.spacing.sm,
-          color: lightTheme.colors.primary,
-          fontSize: lightTheme.typography.fontSize.large,
-          fontWeight: lightTheme.typography.fontWeight.bold,
+          marginBottom: lightTheme.spacing.md,
+          color: lightTheme.colors.text,
+          fontSize: lightTheme.typography.fontSize.h3,
+          fontWeight: lightTheme.typography.fontWeight.semibold,
         }}
       >
         {title}
@@ -35,8 +33,8 @@ export const Card = ({ title, children }: CardProps) => {
 
       <div
         style={{
-          color: lightTheme.colors.text,
-          fontSize: lightTheme.typography.fontSize.medium,
+          color: lightTheme.colors.textSecondary,
+          fontSize: lightTheme.typography.fontSize.body,
         }}
       >
         {children}

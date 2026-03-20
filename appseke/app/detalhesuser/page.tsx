@@ -29,20 +29,20 @@ const clientes: Cliente[] = [
 
 export default function Page() {
     return (
-        <main className="container mx-auto px-4 sm:px-6 lg:px-8 mt-4 py-8 lg:py-16">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+        <main className="container mx-auto px-4 sm:px-6 lg:px-8 mt-6 py-8 lg:py-12">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10">
 
                 {/* ESQUERDA - maior - sempre por cima em mobile */}
-                <div className="lg:col-span-2 order-1 space-y-8 lg:space-y-10 mt-5">
+                <div className="lg:col-span-2 order-1 space-y-8 lg:space-y-10 mt-4">
                     <ItemHeaderviews />
 
                     {/* Seção de portfólio com título */}
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">
+                            <h2 className="text-xl lg:text-2xl font-semibold tracking-tight">
                                 Portfólio em Destaque
                             </h2>
-                            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                            <span className="text-xs md:text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full">
                                 {portfolioItems.length} projetos
                             </span>
                         </div>
@@ -51,11 +51,11 @@ export default function Page() {
                     </div>
 
                     {/* Seção adicional de habilidades/bio (opcional) */}
-                    <div className="border-t border-gray-200 pt-8">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    <div className="border-t border-border pt-8">
+                        <h3 className="text-base md:text-lg font-semibold mb-3">
                             Sobre o profissional
                         </h3>
-                        <p className="text-gray-600 leading-relaxed">
+                        <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
                             Especialista em UX/UI com mais de 8 anos de experiência em projetos de transformação digital.
                             Trabalho com empresas como Google, Nubank e iFood, ajudando a criar experiências digitais memoráveis
                             e centradas no usuário.
@@ -68,13 +68,13 @@ export default function Page() {
                     <ItemBookingCard />
 
                     {/* Mini seção de confiança */}
-                    <div className="bg-linear-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-100">
-                        <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <div className="bg-card rounded-xl p-5 border border-border shadow-sm">
+                        <div className="flex items-center gap-3 text-xs md:text-sm text-muted-foreground">
                             <div className="flex -space-x-2">
                                 {clientes.map((cliente, index) => (
                                     <div key={index}>
                                         {cliente.tipo === 'imagem' && (
-                                            <div className="relative w-8 h-8 rounded-full border-2 border-white overflow-hidden bg-linear-to-br from-gray-300 to-gray-400">
+                                            <div className="relative w-8 h-8 rounded-full border-2 border-background overflow-hidden bg-muted">
                                                 <Image
                                                     src={cliente.src}
                                                     alt={cliente.alt}
@@ -85,20 +85,20 @@ export default function Page() {
                                         )}
 
                                         {cliente.tipo === 'iniciais' && (
-                                            <div className={`w-8 h-8 rounded-full bg-linear-to-br ${cliente.cor} border-2 border-white flex items-center justify-center text-white text-xs font-medium`}>
+                                            <div className={`w-8 h-8 rounded-full bg-linear-to-br ${cliente.cor} border-2 border-background flex items-center justify-center text-white text-[10px] md:text-xs font-medium`}>
                                                 {cliente.iniciais}
                                             </div>
                                         )}
 
                                         {cliente.tipo === 'contador' && (
-                                            <div className="w-8 h-8 rounded-full bg-linear-to-br from-gray-700 to-gray-900 border-2 border-white flex items-center justify-center text-white text-xs font-medium">
+                                            <div className="w-8 h-8 rounded-full bg-linear-to-br from-gray-700 to-gray-900 border-2 border-background flex items-center justify-center text-white text-[10px] md:text-xs font-medium">
                                                 {cliente.iniciais}
                                             </div>
                                         )}
                                     </div>
                                 ))}
                             </div>
-                            <p className="font-medium">
+                            <p className="font-medium text-xs md:text-sm">
                                 +50 clientes satisfeitos
                             </p>
                         </div>

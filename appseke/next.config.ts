@@ -6,7 +6,18 @@ const nextConfig = {
         protocol: "https",
         hostname: "randomuser.me",
       },
+      {
+        protocol: "https",
+        hostname: "default-avatar.com",
+      },
     ],
+  },
+  experimental: {
+    /** Publicações com imagem em base64 no JSON */
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
+    proxyClientMaxBodySize: "8mb",
   },
 };
 
