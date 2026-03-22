@@ -14,7 +14,6 @@ import {
   FileText,
   ChevronDown,
   MessageSquare,
-  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +30,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toaster"
 import { getStoredUserId } from "@/lib/viewer-user-id"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
+import {
+  NetworkListSkeleton,
+  ProfileLayoutSkeleton,
+} from "@/components/profile/profile-layout-skeleton"
 
 interface PerfilUser {
   id?: number | string
@@ -420,11 +423,7 @@ export default function PerfilPage() {
   }
 
   if (isLoading || isPerfilLoading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center bg-muted/50 p-6 pt-20">
-        <p className="text-muted-foreground">A carregar…</p>
-      </div>
-    )
+    return <ProfileLayoutSkeleton />
   }
 
   if (!isAuthenticated) {
@@ -711,10 +710,7 @@ export default function PerfilPage() {
                   seguidores e lista a seguir.
                 </p>
               ) : networkLoading ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                  <p className="mt-3 text-sm">A carregar…</p>
-                </div>
+                <NetworkListSkeleton rows={8} />
               ) : careerTab === 0 ? (
                 <ul className="divide-y divide-border/40">
                   {followersList.length === 0 ? (

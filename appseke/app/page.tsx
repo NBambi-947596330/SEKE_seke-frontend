@@ -6,11 +6,11 @@ import HeroSection from "@/components/itemheaderpost/itemheaderpost";
 import ItemPostProfissonal from "@/components/itempostprofissional/itempostprofissional";
 import { ItemPostCriar } from "@/components/itempostcriar/itempostcriar";
 
-import { Users, Briefcase, Loader2 } from 'lucide-react';
+import { Users, Briefcase } from 'lucide-react';
 import SolicitacaoCliente from '@/components/itempostclients/itempostclient';
 import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
-import { fetchGlobalFeed, fetchMainFeed } from '@/lib/feed-client';
+import { fetchGlobalFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
 import type {
   FollowUserResponse,
@@ -26,6 +26,10 @@ import {
   toProfissionalFeedItem,
   toSolicitacaoFeedItem,
 } from '@/types/home-feed';
+import {
+  HomeFeedPostSkeleton,
+  HomeFeedSkeleton,
+} from '@/components/home/home-feed-skeleton';
 
 function getSessionToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -124,17 +128,11 @@ export default function Home() {
 
     async function run() {
       const token = getSessionToken();
-      const result = token
-        ? await fetchMainFeed({
-            page: feedPage,
-            limit: 10,
-            token,
-          })
-        : await fetchGlobalFeed({
-            page: feedPage,
-            limit: 10,
-            token: null,
-          });
+      const result = await fetchGlobalFeed({
+        page: feedPage,
+        limit: 10,
+        token,
+      });
 
       if (cancelled) return;
 
@@ -364,10 +362,7 @@ export default function Home() {
 
             <div className="">
               {feedLoading && feedPosts.length === 0 && (filtro === 'todos' || filtro === 'profissionais') ? (
-                <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
-                  <Loader2 className="size-6 animate-spin" />
-                  <span>A carregar feed…</span>
-                </div>
+                <HomeFeedSkeleton count={4} />
               ) : itemsParaMostrar.length > 0 ? (
                 <>
                   {itemsParaMostrar.map((item) => (
@@ -388,22 +383,27 @@ export default function Home() {
                     </div>
                   ))}
                   {filtro !== 'solicitacoes' && hasMore && (
-                    <div className="flex justify-center py-6">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={feedLoadingMore}
-                        onClick={handleLoadMore}
-                      >
-                        {feedLoadingMore ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            A carregar…
-                          </>
-                        ) : (
-                          'Carregar mais publicações'
-                        )}
-                      </Button>
+                    <div className="py-6">
+                      {feedLoadingMore ? (
+                        <div className="space-y-4">
+                          <div className="py-2">
+                            <HomeFeedPostSkeleton />
+                          </div>
+                          <div className="py-2">
+                            <HomeFeedPostSkeleton />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex justify-center">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleLoadMore}
+                          >
+                            Carregar mais publicações
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

@@ -17,8 +17,9 @@ export const lightTheme: Theme = {
   },
 
   typography: {
-    // Mantém uma única família de fonte para todo o produto
-    fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    // Alinhado a `next/font` Geist no layout — uma única família em todo o produto
+    fontFamily:
+      'var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif',
     fontSize: {
       small: "14px", // Small
       body: "16px", // Body

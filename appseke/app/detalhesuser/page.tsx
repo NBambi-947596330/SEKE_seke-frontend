@@ -20,6 +20,7 @@ import { followUser, unfollowUser } from "@/lib/follow-client"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
 import type { PublicUserProfile } from "@/types/public-user-profile"
+import { ProfileLayoutSkeleton } from "@/components/profile/profile-layout-skeleton"
 
 const CAREER_TABS = ["Experiência", "Empresas", "Projetos", "Certificados"] as const
 
@@ -224,11 +225,7 @@ function DetalhesUserContent() {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center bg-muted/40 p-6 pt-20">
-        <p className="text-muted-foreground">A carregar perfil…</p>
-      </div>
-    )
+    return <ProfileLayoutSkeleton />
   }
 
   if (error || !profile) {
@@ -369,7 +366,7 @@ function DetalhesUserContent() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap justify-start gap-3 md:col-span-4 md:justify-end">
+                <div className="flex flex-nowrap items-center justify-start gap-2 sm:gap-3 md:col-span-4 md:justify-end">
                   {[
                     { label: "Publicações", val: String(posts) },
                     { label: "A seguir", val: String(following) },
@@ -377,12 +374,14 @@ function DetalhesUserContent() {
                   ].map((stat) => (
                     <div
                       key={stat.label}
-                      className="min-w-[80px] rounded-xl border border-border/45 bg-muted/50 px-4 py-2 text-center"
+                      className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap rounded-xl border border-border/45 bg-muted/50 px-3 py-2 sm:px-4"
                     >
-                      <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                      <span className="text-[10px] font-bold uppercase text-muted-foreground">
                         {stat.label}
-                      </p>
-                      <p className="font-bold text-primary">{stat.val}</p>
+                      </span>
+                      <span className="font-bold tabular-nums text-primary">
+                        {stat.val}
+                      </span>
                     </div>
                   ))}
                 </div>
