@@ -1,4 +1,7 @@
-import Image from 'next/image';
+"use client"
+
+import Image from 'next/image'
+import { useAuth } from "@/lib/use-auth"
 
 interface HeroSectionProps {
   imagemUrl?: string;
@@ -9,6 +12,12 @@ export default function HeroSection({
   imagemUrl = '/postheaderimagem.png', // Substitua pelo caminho da sua imagem
   texto = 'O seu próximo passo profissional começa aqui.'
 }: HeroSectionProps) {
+  const { isAuthenticated, isLoading } = useAuth()
+
+  if (isLoading || isAuthenticated) {
+    return null
+  }
+
   return (
     <div className="relative w-full h-150.5 md:h-83 overflow-hidden rounded-md ">
       {/* Imagem de fundo */}

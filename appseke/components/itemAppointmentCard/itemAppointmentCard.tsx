@@ -1,5 +1,6 @@
 import Image from "next/image";
 import {MapPin, CheckCircle } from "lucide-react";
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
 import { lightTheme } from "@/style/light";
 
 interface AppointmentCardProps {
@@ -10,7 +11,8 @@ interface AppointmentCardProps {
   role: string;
   price: string;
   status: "confirmado" | "pendente" | "cancelado";
-  avatarUrl: string;
+  /** URL da foto; se vazio, usa `/user.svg` */
+  avatarUrl?: string;
 }
 
 export default function AppointmentCard({
@@ -23,6 +25,8 @@ export default function AppointmentCard({
   status,
   avatarUrl,
 }: AppointmentCardProps) {
+  const resolvedAvatar = resolveUserAvatarUrl(avatarUrl)
+
   return (
     <div className="w-full bg-white rounded-md border p-4 sm:p-5 md:p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       {/* Lado esquerdo: data + informações */}
@@ -37,11 +41,12 @@ export default function AppointmentCard({
         {/* Informações */}
         <div className="flex items-start gap-3 sm:gap-4 min-w-0">
           <Image
-            src={avatarUrl}
+            src={resolvedAvatar}
             alt={clientName}
             width={48}
             height={48}
             className="rounded-full object-cover shrink-0 w-12 h-12 sm:w-14 sm:h-14"
+            unoptimized={userAvatarSrcUnoptimized(resolvedAvatar)}
           />
 
           <div className="min-w-0">

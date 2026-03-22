@@ -9,7 +9,6 @@ import {
   Heart,
   Loader2,
   MessageCircle,
-  User,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -27,6 +26,7 @@ import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-
 import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
 import { likePost, unlikePost } from "@/lib/likes-client"
 import { deletePost, fetchPostById } from "@/lib/posts-client"
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
 import type { LikePostResponse, PostDetail } from "@/types/post"
 import { cn } from "@/lib/utils"
@@ -132,7 +132,7 @@ export function ItemPostPublicacaoContent({
     }
   }
 
-  const avatarSrc = post.user.avatar?.trim() || ""
+  const avatarSrc = resolveUserAvatarUrl(post.user.avatar)
   const imageSrc = post.image?.trim() || ""
   const imageAlt =
     post.content.trim().slice(0, 100) || "Imagem da publicação"
@@ -143,20 +143,14 @@ export function ItemPostPublicacaoContent({
       <CardHeader className="p-4 pb-2 flex flex-row items-start justify-between gap-3 space-y-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
-            {avatarSrc ? (
-              <Image
-                src={avatarSrc}
-                alt={post.user.name}
-                width={40}
-                height={40}
-                className="object-cover w-full h-full"
-                unoptimized={imageNeedsUnoptimized(avatarSrc)}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground">
-                <User size={20} />
-              </div>
-            )}
+            <Image
+              src={avatarSrc}
+              alt={post.user.name}
+              width={40}
+              height={40}
+              className="object-cover w-full h-full"
+              unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+            />
           </div>
           <div className="space-y-0.5 min-w-0">
             <Link

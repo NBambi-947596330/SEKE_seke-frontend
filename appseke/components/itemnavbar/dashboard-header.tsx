@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Bell, MessageCircle, LogOut, ChevronDown, Home } from "lucide-react"
 import { DropdownMenu, Avatar } from "radix-ui"
 import { useAuth } from "@/lib/use-auth"
+import { resolveUserAvatarUrl } from "@/lib/user-avatar"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
 function getInitials(name: string): string {
@@ -49,6 +50,8 @@ export function DashboardHeader() {
 
   if (!user) return null
 
+  const avatarSrc = resolveUserAvatarUrl(user.image)
+
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-6">
       {/* Botão menu/sidebar - visível apenas em mobile */}
@@ -89,13 +92,11 @@ export function DashboardHeader() {
               aria-label="Menu do utilizador"
             >
               <Avatar.Root className="inline-flex h-8 w-8 shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-medium">
-                {user.image ? (
-                  <Avatar.Image
-                    src={user.image}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
+                <Avatar.Image
+                  src={avatarSrc}
+                  alt={user.name}
+                  className="h-full w-full object-cover"
+                />
                 <Avatar.Fallback
                   className="flex h-full w-full items-center justify-center text-muted-foreground"
                   delayMs={0}

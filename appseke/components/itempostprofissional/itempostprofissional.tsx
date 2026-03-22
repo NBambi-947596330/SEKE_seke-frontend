@@ -3,19 +3,25 @@
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
-import { Briefcase, Heart, Loader2, User } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Briefcase, Heart, Loader2, UserMinus, UserPlus } from "lucide-react"
 
 import { DeletePostConfirmDialog } from "@/components/delete-post-confirm-dialog/delete-post-confirm-dialog"
 import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
 import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-menu"
 import { PostEditModal } from "@/components/post-edit-modal/post-edit-modal"
 import { useToast } from "@/components/ui/toaster"
+import { followUser, unfollowUser } from "@/lib/follow-client"
 import { likePost, unlikePost } from "@/lib/likes-client"
 import { deletePost } from "@/lib/posts-client"
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
-import type { LikePostResponse, PostDetail } from "@/types/post"
+import type {
+  FollowUserResponse,
+  LikePostResponse,
+  PostDetail,
+} from "@/types/post"
 
 function resolveAuthToken(): string | null {
   if (typeof window === "undefined") return null
@@ -49,6 +55,10 @@ export interface ItemPostProfissonalProps {
   likedByMe?: boolean
   /** Após POST like — atualizar lista no pai */
   onLikeResult?: (data: LikePostResponse) => void
+  /** Já segues o autor (feed / API) */
+  followingAuthor?: boolean
+  /** Após POST follow — atualizar outros posts do mesmo autor no pai */
+  onFollowResult?: (authorUserId: string, data: FollowUserResponse) => void
 }
 
 export default function ItemPostProfissonal({
@@ -56,7 +66,7 @@ export default function ItemPostProfissonal({
   data = "25 Nov at 12:24 PM",
   descricao = "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s.",
   titulo = "TÍTULO DO POST",
-  imagemPerfil = "/imageprofissional.png",
+  imagemPerfil,
   imagemPost = "/imageprofissional.png",
   curtidas = 42,
   postId,
@@ -65,6 +75,8 @@ export default function ItemPostProfissonal({
   onPostDeleted,
   likedByMe = false,
   onLikeResult,
+  followingAuthor = false,
+  onFollowResult,
 }: ItemPostProfissonalProps) {
   const router = useRouter()
   const toast = useToast()
@@ -75,6 +87,12 @@ export default function ItemPostProfissonal({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [liking, setLiking] = useState(false)
+  const [following, setFollowing] = useState(followingAuthor)
+  const [followingLoading, setFollowingLoading] = useState(false)
+
+  useEffect(() => {
+    setFollowing(followingAuthor)
+  }, [followingAuthor])
 
   const isOwnPost =
     !!postId &&
@@ -85,11 +103,49 @@ export default function ItemPostProfissonal({
     ? `/detalhesuser?userId=${encodeURIComponent(authorUserId)}`
     : "/detalhesuser"
 
+  const avatarSrc = resolveUserAvatarUrl(imagemPerfil)
+
   const startEdit = () => {
     setEditModalOpen(true)
   }
 
   const requestDelete = () => setDeleteDialogOpen(true)
+
+  const handleFollowClick = async () => {
+    if (!authorUserId || !token) {
+      toast.error("Inicie sessão para seguir este utilizador.")
+      return
+    }
+    if (following) return
+    setFollowingLoading(true)
+    const result = await followUser(authorUserId, token)
+    setFollowingLoading(false)
+    if (result.success) {
+      setFollowing(result.data.following)
+      onFollowResult?.(authorUserId, result.data)
+      toast.success(result.data.message)
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  const handleUnfollowClick = async () => {
+    if (!authorUserId || !token) {
+      toast.error("Inicie sessão para gerir quem segues.")
+      return
+    }
+    if (!following) return
+    setFollowingLoading(true)
+    const result = await unfollowUser(authorUserId, token)
+    setFollowingLoading(false)
+    if (result.success) {
+      setFollowing(result.data.following)
+      onFollowResult?.(authorUserId, result.data)
+      toast.success(result.data.message)
+    } else {
+      toast.error(result.error)
+    }
+  }
 
   const handleLikeClick = async () => {
     if (!postId || !token) {
@@ -131,28 +187,72 @@ export default function ItemPostProfissonal({
       <div className="p-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
-            {imagemPerfil ? (
-              <Image
-                src={imagemPerfil}
-                alt={nome}
-                width={40}
-                height={40}
-                className="object-cover w-full h-full"
-                unoptimized={imageNeedsUnoptimized(imagemPerfil)}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground">
-                <User size={20} />
-              </div>
-            )}
+            <Image
+              src={avatarSrc}
+              alt={nome}
+              width={40}
+              height={40}
+              className="object-cover w-full h-full"
+              unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+            />
           </div>
 
           <div className="space-y-0.5 min-w-0">
-            <Link href={profileHref}>
-              <h3 className="font-semibold text-sm hover:underline cursor-pointer truncate">
-                {nome}
-              </h3>
-            </Link>
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <Link href={profileHref} className="min-w-0">
+                <h3 className="font-semibold text-sm hover:underline cursor-pointer truncate">
+                  {nome}
+                </h3>
+              </Link>
+              {!isOwnPost && authorUserId ? (
+                following ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleUnfollowClick()}
+                    disabled={followingLoading}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline shrink-0 disabled:opacity-60"
+                    title="Deixar de seguir"
+                  >
+                    {followingLoading ? (
+                      <>
+                        <Loader2
+                          className="size-3.5 animate-spin shrink-0"
+                          aria-hidden
+                        />
+                        <span className="sr-only">A carregar</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserMinus className="size-3.5 shrink-0" aria-hidden />
+                        A seguir
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleFollowClick()}
+                    disabled={followingLoading}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline shrink-0 disabled:opacity-60"
+                  >
+                    {followingLoading ? (
+                      <>
+                        <Loader2
+                          className="size-3.5 animate-spin shrink-0"
+                          aria-hidden
+                        />
+                        <span className="sr-only">A carregar</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="size-3.5 shrink-0" aria-hidden />
+                        Seguir
+                      </>
+                    )}
+                  </button>
+                )
+              ) : null}
+            </div>
             <p className="text-xs text-muted-foreground">{data}</p>
           </div>
         </div>

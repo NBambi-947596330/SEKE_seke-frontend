@@ -2,25 +2,17 @@
 
 import { useCallback, useState } from "react"
 import Image from "next/image"
-import { ImagePlus, Loader2, Send, User, X } from "lucide-react"
+import { ImagePlus, Loader2, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toaster"
 import { compressImageToJpegDataUrl } from "@/lib/compress-image-client"
 import { useAuth } from "@/lib/use-auth"
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 import { createPost } from "@/lib/posts-client"
 import type { PostRecord } from "@/types/post"
-
-function avatarNeedsUnoptimized(src: string): boolean {
-  return (
-    src.startsWith("http://") ||
-    src.startsWith("https://") ||
-    src.startsWith("data:") ||
-    src.startsWith("//")
-  )
-}
 
 /** Ficheiro original até 12 MB; o envio usa JPEG comprimido (muito menor que PNG em base64). */
 const MAX_FILE_BYTES = 12 * 1024 * 1024
@@ -33,7 +25,7 @@ export interface ItemPostCriarProps {
 
 export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
   const toast = useToast()
-  const { user } = useAuth()
+  const { user, isAuthenticated } = useAuth()
   const [content, setContent] = useState("")
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
   const [isCompressingImage, setIsCompressingImage] = useState(false)
@@ -121,8 +113,12 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
     [content, imageDataUrl, onSuccess, toast]
   )
 
+  if (!isAuthenticated) {
+    return null
+  }
+
   const displayName = user?.name?.trim() || "Utilizador"
-  const avatarSrc = user?.image?.trim() || ""
+  const avatarSrc = resolveUserAvatarUrl(user?.image)
 
   return (
     <div
@@ -135,20 +131,14 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         <div className="p-4 pb-3">
           <div className="flex gap-3">
             <div className="size-11 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
-              {avatarSrc ? (
-                <Image
-                  src={avatarSrc}
-                  alt=""
-                  width={44}
-                  height={44}
-                  className="size-full object-cover"
-                  unoptimized={avatarNeedsUnoptimized(avatarSrc)}
-                />
-              ) : (
-                <div className="flex size-full items-center justify-center text-muted-foreground">
-                  <User className="size-5" aria-hidden />
-                </div>
-              )}
+              <Image
+                src={avatarSrc}
+                alt=""
+                width={44}
+                height={44}
+                className="size-full object-cover"
+                unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+              />
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="truncate text-sm font-semibold leading-none text-foreground">

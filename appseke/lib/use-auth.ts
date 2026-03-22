@@ -17,12 +17,17 @@ function getStoredUser(): AuthUser | null {
   try {
     const raw = sessionStorage.getItem(USER_DATA_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as { name?: string; email?: string; image?: string }
+    const data = JSON.parse(raw) as {
+      name?: string
+      email?: string
+      image?: string
+      avatar?: string
+    }
     if (!data?.email) return null
     return {
       name: data.name ?? data.email?.split("@")[0] ?? "Utilizador",
       email: data.email,
-      image: data.image ?? null,
+      image: data.avatar?.trim() || data.image?.trim() || null,
     }
   } catch {
     return null

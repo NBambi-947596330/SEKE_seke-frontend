@@ -10,9 +10,14 @@ import { Users, Briefcase, Loader2 } from 'lucide-react';
 import SolicitacaoCliente from '@/components/itempostclients/itempostclient';
 import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
-import { fetchGlobalFeed } from '@/lib/feed-client';
+import { fetchGlobalFeed, fetchMainFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
-import type { LikePostResponse, PostDetail, PostRecord } from '@/types/post';
+import type {
+  FollowUserResponse,
+  LikePostResponse,
+  PostDetail,
+  PostRecord,
+} from '@/types/post';
 import type { GlobalFeedPagination } from '@/types/feed';
 import {
   type FeedItem,
@@ -73,7 +78,7 @@ const PROFISSIONAIS_MOCK: ProfissionalFeedRow[] = [
     data: "—",
     descricao: "Disponível para serviços de electricidade residencial e comercial.",
     titulo: "ELECTRICISTA CERTIFICADO",
-    imagemPerfil: "/imageprofissional.png",
+    imagemPerfil: "/user.svg",
     imagemPost: "/imageprofissional.png",
     curtidas: 28
   },
@@ -83,7 +88,7 @@ const PROFISSIONAIS_MOCK: ProfissionalFeedRow[] = [
     data: "—",
     descricao: "Especialista em canalização e instalações hidráulicas.",
     titulo: "CANALIZADORA PROFISSIONAL",
-    imagemPerfil: "/imageprofissional.png",
+    imagemPerfil: "/user.svg",
     imagemPost: "/imageprofissional.png",
     curtidas: 42
   },
@@ -93,7 +98,7 @@ const PROFISSIONAIS_MOCK: ProfissionalFeedRow[] = [
     data: "—",
     descricao: "Pintor com experiência em interiores e exteriores.",
     titulo: "PINTOR ESPECIALISTA",
-    imagemPerfil: "/imageprofissional.png",
+    imagemPerfil: "/user.svg",
     imagemPost: "/imageprofissional.png",
     curtidas: 15
   }
@@ -119,11 +124,17 @@ export default function Home() {
 
     async function run() {
       const token = getSessionToken();
-      const result = await fetchGlobalFeed({
-        page: feedPage,
-        limit: 10,
-        token,
-      });
+      const result = token
+        ? await fetchMainFeed({
+            page: feedPage,
+            limit: 10,
+            token,
+          })
+        : await fetchGlobalFeed({
+            page: feedPage,
+            limit: 10,
+            token: null,
+          });
 
       if (cancelled) return;
 
@@ -190,6 +201,19 @@ export default function Home() {
                 liked_by_me: data.liked,
                 stats: { ...p.stats, likes: data.total_likes },
               }
+            : p
+        )
+      );
+    },
+    []
+  );
+
+  const handleFeedFollowResult = useCallback(
+    (authorUserId: string, data: FollowUserResponse) => {
+      setFeedPosts((prev) =>
+        prev.map((p) =>
+          String(p.user.id) === String(authorUserId)
+            ? { ...p, following_author: data.following }
             : p
         )
       );
@@ -358,6 +382,7 @@ export default function Home() {
                           onLikeResult={(likeData) =>
                             handleFeedLikeResult(item.id, likeData)
                           }
+                          onFollowResult={handleFeedFollowResult}
                         />
                       )}
                     </div>
@@ -431,7 +456,7 @@ export default function Home() {
                   <p className="text-xs text-gray-500">{sol.servico} • {sol.bairro}</p>
                   <span className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${sol.prioridade === 'alta' ? 'bg-red-50 text-red-600' :
                     sol.prioridade === 'media' ? 'bg-amber-50 text-amber-600' :
-                      'bg-blue-50 text-blue-600'
+                      'bg-gray-100 text-gray-700'
                     }`}>
                     {sol.prioridade === 'alta' ? 'Urgente' :
                       sol.prioridade === 'media' ? 'Normal' : 'Baixa prioridade'}

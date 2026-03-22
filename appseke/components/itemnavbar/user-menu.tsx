@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react"
 import { MessageCircle, User, Settings, LogOut, ChevronDown } from "lucide-react"
 import { DropdownMenu, Avatar } from "radix-ui"
 import { useAuth } from "@/lib/use-auth"
+import { resolveUserAvatarUrl } from "@/lib/user-avatar"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -26,6 +27,8 @@ export function UserMenu() {
   const { user, logout } = useAuth()
 
   if (!user) return null
+
+  const avatarSrc = resolveUserAvatarUrl(user.image)
 
   const handleLogout = async () => {
     const token =
@@ -68,13 +71,11 @@ export function UserMenu() {
             aria-label="Menu do utilizador"
           >
             <Avatar.Root className="inline-flex h-8 w-8 shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-gray-200 text-xs font-medium">
-              {user.image ? (
-                <Avatar.Image
-                  src={user.image}
-                  alt={user.name}
-                  className="h-full w-full object-cover"
-                />
-              ) : null}
+              <Avatar.Image
+                src={avatarSrc}
+                alt={user.name}
+                className="h-full w-full object-cover"
+              />
               <Avatar.Fallback
                 className="flex h-full w-full items-center justify-center text-gray-700"
                 delayMs={0}
@@ -97,7 +98,7 @@ export function UserMenu() {
           >
             <DropdownMenu.Item
               className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:bg-gray-100 outline-none"
-              onSelect={() => router.push("/profissional")}
+              onSelect={() => router.push("/perfil")}
             >
               <User size={16} />
               Meu perfil

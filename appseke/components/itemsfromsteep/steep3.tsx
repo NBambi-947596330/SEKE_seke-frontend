@@ -47,7 +47,7 @@ export function DocumentStep({
                             htmlFor="documento-frente" 
                             className="cursor-pointer block"
                         >
-                            <div className="flex flex-col items-center justify-center h-40 bg-linear-to-br from-blue-50 to-purple-50 rounded-lg p-4">
+                            <div className="flex flex-col items-center justify-center h-40 bg-linear-to-br from-gray-50 to-stone-100 rounded-lg p-4">
                                 {documentoFrente ? (
                                     <div className="relative w-full h-36">
                                         <Image
@@ -60,10 +60,10 @@ export function DocumentStep({
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-2">
-                                            <Upload size={28} className="text-blue-600" />
+                                        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-2">
+                                            <Upload size={28} className="text-[#18B481]" />
                                         </div>
-                                        <p className="text-sm font-medium text-blue-600">
+                                        <p className="text-sm font-medium text-gray-800">
                                             Clique para enviar a FRENTE
                                         </p>
                                         <p className="text-xs text-gray-400 mt-1">

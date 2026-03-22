@@ -33,6 +33,17 @@ export interface LikePostResponse {
   total_likes: number
 }
 
+/** Resposta de POST /api/follow/:userId — seguir utilizador */
+export interface FollowUserResponse {
+  following: boolean
+  message: string
+}
+
+/** Resposta de GET /api/follow/status/:userId — se segues este utilizador */
+export interface FollowStatusResponse {
+  is_following: boolean
+}
+
 /** Utilizador na lista de gostos (GET /api/likes/post/:postId) */
 export interface PostLikeUser {
   id?: string
@@ -88,6 +99,8 @@ export interface PostDetail {
   stats: PostDetailStats
   /** Presente quando o pedido inclui Authorization (utilizador autenticado) */
   liked_by_me?: boolean
+  /** Já segues o autor desta publicação (feed com token, se a API enviar) */
+  following_author?: boolean
 }
 
 /** Alias semântico — resposta de sucesso de GET /api/posts/:id */

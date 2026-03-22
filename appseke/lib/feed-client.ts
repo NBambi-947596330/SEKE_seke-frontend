@@ -4,6 +4,7 @@ import type { PostDetail } from "@/types/post"
 import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
 const FEED_GLOBAL_API = "/api/feed/global"
+const FEED_MAIN_API = "/api/feed"
 
 function parseNumberField(v: unknown): number | null {
   if (typeof v === "number" && !Number.isNaN(v)) return v
@@ -103,6 +104,21 @@ function parseFeedUser(
   return { id, name, avatar: pickString(o.user_avatar) ?? pickString(o.avatar) }
 }
 
+function parseFollowingAuthor(
+  o: Record<string, unknown>,
+  userNested: Record<string, unknown> | null
+): boolean | undefined {
+  const direct =
+    o.following_author ?? o.is_following ?? o.following ?? o.follows_author
+  if (typeof direct === "boolean") return direct
+
+  if (userNested) {
+    const u = userNested.is_following ?? userNested.following
+    if (typeof u === "boolean") return u
+  }
+  return undefined
+}
+
 /**
  * Item de lista no feed — tolerante a formatos reais da API (ids numéricos, author, etc.).
  */
@@ -118,6 +134,10 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
 
   const content = pickContent(o)
   const created_at = pickCreatedAt(o)
+
+  const userNestedForFollow =
+    (o.user && typeof o.user === "object" ? (o.user as Record<string, unknown>) : null) ??
+    (o.author && typeof o.author === "object" ? (o.author as Record<string, unknown>) : null)
 
   const user = parseFeedUser(o, id)
 
@@ -148,6 +168,11 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
   const likedByMe = parseLikedByMeFromPostLike(o)
   if (likedByMe !== undefined) {
     detail.liked_by_me = likedByMe
+  }
+
+  const followingAuthor = parseFollowingAuthor(o, userNestedForFollow)
+  if (followingAuthor !== undefined) {
+    detail.following_author = followingAuthor
   }
 
   return detail
@@ -252,12 +277,19 @@ export interface FetchGlobalFeedOptions {
   token?: string | null
 }
 
-/**
- * GET /api/feed/global — feed global (posts recentes + paginação).
- */
-export async function fetchGlobalFeed(
-  options: FetchGlobalFeedOptions = {}
+async function fetchFeedFromUrl(
+  urlBase: string,
+  options: FetchGlobalFeedOptions = {},
+  requireAuth: boolean
 ): Promise<FetchGlobalFeedOutcome> {
+  const token = options.token?.trim() ?? ""
+  if (requireAuth && !token) {
+    return {
+      success: false,
+      error: "Inicie sessão para ver o feed.",
+    }
+  }
+
   const page = options.page ?? 1
   const limit = options.limit ?? 10
 
@@ -267,11 +299,11 @@ export async function fetchGlobalFeed(
   })
 
   const headers: HeadersInit = { Accept: "application/json" }
-  if (options.token) {
-    headers.Authorization = `Bearer ${options.token}`
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
 
-  const res = await fetch(`${FEED_GLOBAL_API}?${qs.toString()}`, {
+  const res = await fetch(`${urlBase}?${qs.toString()}`, {
     method: "GET",
     headers,
     cache: "no-store",
@@ -315,4 +347,22 @@ export async function fetchGlobalFeed(
     success: true,
     data: { posts, pagination },
   }
+}
+
+/**
+ * GET /api/feed/global — feed global (posts recentes; token opcional).
+ */
+export async function fetchGlobalFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchFeedFromUrl(FEED_GLOBAL_API, options, false)
+}
+
+/**
+ * GET /api/feed — feed principal (quem segues + teus; Authorization obrigatório no proxy).
+ */
+export async function fetchMainFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchFeedFromUrl(FEED_MAIN_API, options, true)
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Bell, Clock, Heart, Inbox, Loader2, UserPlus } from "lucide-react"
+import { Bell, Clock, Inbox, Loader2 } from "lucide-react"
 
 import {
   fetchNotifications,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/notifications-client"
 import { useAuth } from "@/lib/use-auth"
 import type { AppNotification } from "@/types/notifications"
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 
 function getStoredToken(): string | null {
@@ -59,15 +60,6 @@ function notificationHref(n: AppNotification): string {
     return `/posts/${encodeURIComponent(n.post.id)}`
   }
   return `/detalhesuser?userId=${encodeURIComponent(n.actor.id)}`
-}
-
-function imageNeedsUnoptimized(src: string): boolean {
-  return (
-    src.startsWith("http://") ||
-    src.startsWith("https://") ||
-    src.startsWith("data:") ||
-    src.startsWith("//")
-  )
 }
 
 export type NotificationListFilter = "all" | "unread" | "read"
@@ -315,7 +307,9 @@ export function NavbarNotifications() {
               </div>
             ) : (
               <ul className="divide-y divide-gray-100 bg-white">
-                {items.map((n) => (
+                {items.map((n) => {
+                  const actorAvatarSrc = resolveUserAvatarUrl(n.actor.avatar)
+                  return (
                   <li key={n.id}>
                     <Link
                       href={notificationHref(n)}
@@ -332,30 +326,15 @@ export function NavbarNotifications() {
                       )}
                     >
                       <div className="relative shrink-0">
-                        <div className="h-10 w-10 overflow-hidden rounded-full bg-gray-100">
-                          {n.actor.avatar?.trim() ? (
-                            <Image
-                              src={n.actor.avatar.trim()}
-                              alt={n.actor.name}
-                              width={40}
-                              height={40}
-                              className="h-full w-full object-cover"
-                              unoptimized={imageNeedsUnoptimized(
-                                n.actor.avatar.trim()
-                              )}
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-gray-400">
-                              {n.type === "follow" ? (
-                                <UserPlus className="size-[18px]" strokeWidth={1.75} />
-                              ) : (
-                                <Heart
-                                  className="size-[18px] text-[#18B481]/80"
-                                  strokeWidth={1.75}
-                                />
-                              )}
-                            </div>
-                          )}
+                        <div className="relative h-10 w-10 overflow-hidden rounded-full bg-gray-100">
+                          <Image
+                            src={actorAvatarSrc}
+                            alt={n.actor.name}
+                            fill
+                            className="object-cover"
+                            sizes="40px"
+                            unoptimized={userAvatarSrcUnoptimized(actorAvatarSrc)}
+                          />
                         </div>
                       </div>
                       <div className="min-w-0 flex-1 pt-0.5">
@@ -389,7 +368,8 @@ export function NavbarNotifications() {
                       </div>
                     </Link>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>

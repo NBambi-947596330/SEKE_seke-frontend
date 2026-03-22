@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { useCallback, useEffect, useId, useState } from "react"
-import { ImagePlus, Loader2, User } from "lucide-react"
+import { ImagePlus, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { compressImageToJpegDataUrl } from "@/lib/compress-image-client"
 import { updatePost } from "@/lib/posts-client"
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { getStoredUserProfile } from "@/lib/viewer-user-id"
 import type { PostDetail, UpdatePostRequest } from "@/types/post"
 
@@ -150,7 +151,7 @@ export function PostEditModal({
 
   const sessionProfile = open ? getStoredUserProfile() : null
   const displayName = sessionProfile?.name ?? "Utilizador"
-  const avatarSrc = sessionProfile?.avatar?.trim() || ""
+  const avatarSrc = resolveUserAvatarUrl(sessionProfile?.avatar)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -158,20 +159,14 @@ export function PostEditModal({
         <div className="p-6 pb-0">
           <DialogHeader className="flex flex-row gap-4 items-start text-left space-y-0">
             <div className="size-14 shrink-0 rounded-full overflow-hidden bg-muted ring-2 ring-border/80">
-              {avatarSrc ? (
-                <Image
-                  src={avatarSrc}
-                  alt={displayName}
-                  width={56}
-                  height={56}
-                  className="object-cover w-full h-full"
-                  unoptimized={imageNeedsUnoptimized(avatarSrc)}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                  <User className="size-7" aria-hidden />
-                </div>
-              )}
+              <Image
+                src={avatarSrc}
+                alt={displayName}
+                width={56}
+                height={56}
+                className="object-cover w-full h-full"
+                unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+              />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
               <DialogTitle className="text-left">Editar publicação</DialogTitle>

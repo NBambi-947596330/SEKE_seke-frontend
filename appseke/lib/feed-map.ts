@@ -1,4 +1,5 @@
 import type { ItemPostProfissonalProps } from "@/components/itempostprofissional/itempostprofissional"
+import { resolveUserAvatarUrl } from "@/lib/user-avatar"
 import type { PostDetail, PostRecord } from "@/types/post"
 import type { ProfissionalFeedRow } from "@/types/home-feed"
 
@@ -27,11 +28,12 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     data: formatFeedDate(post.created_at),
     descricao: post.content,
     titulo: deriveTitulo(post.content),
-    imagemPerfil: post.user.avatar?.trim() || "/imageprofissional.png",
+    imagemPerfil: resolveUserAvatarUrl(post.user.avatar),
     imagemPost: post.image?.trim() || undefined,
     curtidas: post.stats.likes,
     authorUserId: post.user.id,
     likedByMe: post.liked_by_me === true,
+    followingAuthor: post.following_author === true,
   }
   return { id: post.id, ...props }
 }

@@ -29,7 +29,7 @@ const BannerFindProfessional: React.FC = () => {
               <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
                 Encontre o profissional ideal
               </h1>
-              <p className="text-lg md:text-xl text-blue-100 max-w-2xl">
+              <p className="text-lg md:text-xl text-white/85 max-w-2xl">
                 Explore profissionais qualificados por categoria, preço e avaliação com segurança e rapidez.
               </p>
             </div>

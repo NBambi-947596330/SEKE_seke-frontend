@@ -1,5 +1,6 @@
 import Image from 'next/image';
-import { User, MapPin, Phone } from 'lucide-react';
+import { MapPin, Phone } from 'lucide-react';
+import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from '@/lib/user-avatar';
 import { lightTheme } from '@/style/light';
 
 export interface SolicitacaoClienteProps {
@@ -17,7 +18,7 @@ export interface SolicitacaoClienteProps {
 
 export default function SolicitacaoCliente({
   nome = "Cliente",
-  avatar = "/imagemcliente.png",
+  avatar,
   tempoSolicitacao = "há 5 min",
   distancia = "2.5 km",
   servico = "Serviço solicitado",
@@ -27,9 +28,10 @@ export default function SolicitacaoCliente({
   prioridade = 'media',
   telefone = "+244 900 000 000"
 }: SolicitacaoClienteProps) {
+  const avatarSrc = resolveUserAvatarUrl(avatar)
 
   const prioridadeCores = {
-    baixa: 'text-blue-600',
+    baixa: 'text-gray-600',
     media: 'text-amber-600',
     alta: 'text-red-600'
   };
@@ -59,19 +61,14 @@ export default function SolicitacaoCliente({
         {/* Linha do cliente */}
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 bg-gray-100 rounded-full overflow-hidden shrink-0">
-            {avatar ? (
-              <Image
-                src={avatar}
-                alt={nome}
-                width={40}
-                height={40}
-                className="object-cover w-full h-full"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500">
-                <User size={18} />
-              </div>
-            )}
+            <Image
+              src={avatarSrc}
+              alt={nome}
+              width={40}
+              height={40}
+              className="object-cover w-full h-full"
+              unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+            />
           </div>
           
           <div>
