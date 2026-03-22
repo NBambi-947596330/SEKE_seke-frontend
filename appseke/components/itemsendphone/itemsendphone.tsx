@@ -26,7 +26,7 @@ export function ItemSendPhone() {
                 <CardTitle className="text-1xl">Informe seu número de telefone</CardTitle>
                 <CardDescription style={{
                     color: lightTheme.colors.textSecondary,
-                    fontSize: lightTheme.typography.fontSize.medium
+                    fontSize: lightTheme.typography.fontSize.body
 
                 }}>
                     Informe o número de telefone associado à sua conta para recuperar o acesso.

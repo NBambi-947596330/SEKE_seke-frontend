@@ -27,7 +27,7 @@ export function ItemOtpCode() {
                 <CardTitle className="text-xl">Confirmar código</CardTitle>
                 <CardDescription style={{
                     color: lightTheme.colors.textSecondary,
-                    fontSize: lightTheme.typography.fontSize.medium
+                    fontSize: lightTheme.typography.fontSize.body
                 }}>
                     Enviamos um código para seu telefone. Digite-o abaixo para continuar.
                 </CardDescription>
@@ -44,7 +44,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                     <InputOTPSlot
@@ -53,7 +53,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                     <InputOTPSlot
@@ -62,7 +62,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                     <InputOTPSlot
@@ -71,7 +71,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                     <InputOTPSlot
@@ -80,7 +80,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                     <InputOTPSlot
@@ -89,7 +89,7 @@ export function ItemOtpCode() {
                                         style={{
                                             borderColor: lightTheme.colors.border,
                                             borderRadius: lightTheme.borderRadius.small,
-                                            fontSize: lightTheme.typography.fontSize.large
+                                            fontSize: lightTheme.typography.fontSize.h3
                                         }}
                                     />
                                 </InputOTPGroup>
