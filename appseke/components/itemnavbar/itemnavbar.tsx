@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/use-auth"
 import { UserMenu } from "@/components/itemnavbar/user-menu"
+import { NavbarNotifications } from "@/components/navbar-notifications/navbar-notifications"
 import { lightTheme } from "@/style/light"
 
 export function Navbar() {
@@ -76,6 +77,8 @@ export function Navbar() {
                                 <Search size={20} />
                             </button>
                         </div>
+
+                        <NavbarNotifications />
 
                         {/* Autenticado: ícones + menu utilizador; não autenticado: Login e Criar conta */}
                         <div className="hidden md:flex items-center gap-2">

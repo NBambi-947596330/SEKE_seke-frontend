@@ -12,7 +12,7 @@ import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
 import { fetchGlobalFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
-import type { PostDetail, PostRecord } from '@/types/post';
+import type { LikePostResponse, PostDetail, PostRecord } from '@/types/post';
 import type { GlobalFeedPagination } from '@/types/feed';
 import {
   type FeedItem,
@@ -168,6 +168,35 @@ export default function Home() {
     setFeedLoading(true);
   }, []);
 
+  const handleFeedPostUpdated = useCallback((detail: PostDetail) => {
+    setFeedPosts((prev) =>
+      prev.map((p) => (String(p.id) === String(detail.id) ? detail : p))
+    );
+  }, []);
+
+  const handleFeedPostDeleted = useCallback((deletedId: string) => {
+    setFeedPosts((prev) =>
+      prev.filter((p) => String(p.id) !== String(deletedId))
+    );
+  }, []);
+
+  const handleFeedLikeResult = useCallback(
+    (postId: string, data: LikePostResponse) => {
+      setFeedPosts((prev) =>
+        prev.map((p) =>
+          String(p.id) === String(postId)
+            ? {
+                ...p,
+                liked_by_me: data.liked,
+                stats: { ...p.stats, likes: data.total_likes },
+              }
+            : p
+        )
+      );
+    },
+    []
+  );
+
   const interleaveFeedItems = (
     solicitacaoItems: FeedItem[],
     profissionalItems: FeedItem[]
@@ -322,7 +351,14 @@ export default function Home() {
                       {item.tipo === 'solicitacao' ? (
                         <SolicitacaoCliente {...item.data} />
                       ) : (
-                        <ItemPostProfissonal {...item.data} />
+                        <ItemPostProfissonal
+                          {...item.data}
+                          onPostUpdated={handleFeedPostUpdated}
+                          onPostDeleted={handleFeedPostDeleted}
+                          onLikeResult={(likeData) =>
+                            handleFeedLikeResult(item.id, likeData)
+                          }
+                        />
                       )}
                     </div>
                   ))}

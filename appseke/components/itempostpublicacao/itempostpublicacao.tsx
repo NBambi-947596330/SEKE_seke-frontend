@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   Briefcase,
   Heart,
+  Loader2,
   MessageCircle,
   User,
 } from "lucide-react"
@@ -18,8 +20,15 @@ import {
   CardHeader,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { fetchPostById } from "@/lib/posts-client"
-import type { PostDetail } from "@/types/post"
+import { useToast } from "@/components/ui/toaster"
+import { DeletePostConfirmDialog } from "@/components/delete-post-confirm-dialog/delete-post-confirm-dialog"
+import { PostEditModal } from "@/components/post-edit-modal/post-edit-modal"
+import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-menu"
+import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
+import { likePost, unlikePost } from "@/lib/likes-client"
+import { deletePost, fetchPostById } from "@/lib/posts-client"
+import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
+import type { LikePostResponse, PostDetail } from "@/types/post"
 import { cn } from "@/lib/utils"
 
 function resolveAuthToken(accessToken: string | null | undefined): string | null {
@@ -53,6 +62,14 @@ function imageNeedsUnoptimized(src: string): boolean {
 export interface ItemPostPublicacaoContentProps {
   post: PostDetail
   className?: string
+  /** Se omitido, usa `sessionStorage.auth_token` no cliente */
+  accessToken?: string | null
+  /** Chamado após PUT bem-sucedido com o `post` devolvido pela API */
+  onPostSaved?: (post: PostDetail) => void
+  /** Chamado após DELETE bem-sucedido (ex.: redirecionar) */
+  onPostDeleted?: () => void
+  /** Após POST like — atualizar estado local com `liked` e `total_likes` */
+  onLikeResult?: (data: LikePostResponse) => void
 }
 
 /**
@@ -61,7 +78,60 @@ export interface ItemPostPublicacaoContentProps {
 export function ItemPostPublicacaoContent({
   post,
   className,
+  accessToken,
+  onPostSaved,
+  onPostDeleted,
+  onLikeResult,
 }: ItemPostPublicacaoContentProps) {
+  const toast = useToast()
+  const viewerId = useViewerUserId()
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [liking, setLiking] = useState(false)
+
+  const token = resolveAuthToken(accessToken)
+  const isOwnPost = !!token && sameUserId(viewerId, post.user.id)
+
+  const requestDelete = () => setDeleteDialogOpen(true)
+
+  const executeDelete = async () => {
+    if (!token) return
+    setDeleting(true)
+    try {
+      const result = await deletePost(post.id, token)
+      if (result.success) {
+        setDeleteDialogOpen(false)
+        onPostDeleted?.()
+      } else {
+        window.alert(result.error)
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const startEdit = () => {
+    setEditModalOpen(true)
+  }
+
+  const handleLikeClick = async () => {
+    if (!token) {
+      toast.error("Inicie sessão para gostar desta publicação.")
+      return
+    }
+    setLiking(true)
+    const result = liked
+      ? await unlikePost(post.id, token)
+      : await likePost(post.id, token)
+    setLiking(false)
+    if (result.success) {
+      onLikeResult?.(result.data)
+    } else {
+      toast.error(result.error)
+    }
+  }
+
   const avatarSrc = post.user.avatar?.trim() || ""
   const imageSrc = post.image?.trim() || ""
   const imageAlt =
@@ -100,11 +170,20 @@ export function ItemPostPublicacaoContent({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-muted px-3 py-1.5 rounded-full shrink-0">
-          <Briefcase size={14} className="text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">
-            Profissional
-          </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 bg-muted px-3 py-1.5 rounded-full">
+            <Briefcase size={14} className="text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">
+              Profissional
+            </span>
+          </div>
+          {isOwnPost ? (
+            <PostMeatballMenu
+              onEdit={startEdit}
+              onDelete={requestDelete}
+              deleteLoading={false}
+            />
+          ) : null}
         </div>
       </CardHeader>
 
@@ -127,20 +206,70 @@ export function ItemPostPublicacaoContent({
         </p>
       </CardContent>
 
+      {token && isOwnPost ? (
+        <>
+          <PostEditModal
+            open={editModalOpen}
+            onOpenChange={setEditModalOpen}
+            postId={post.id}
+            token={token}
+            initialContent={post.content}
+            initialImageUrl={post.image}
+            onSaved={(detail) => onPostSaved?.(detail)}
+            onError={(message) => window.alert(message)}
+          />
+          <DeletePostConfirmDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            onConfirm={executeDelete}
+            loading={deleting}
+          />
+        </>
+      ) : null}
+
       <CardFooter className="px-4 pb-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3 bg-background/60">
         <div className="flex items-center gap-4">
           <div
-            className="flex items-center gap-2 text-muted-foreground"
-            title={liked ? "Gostou" : "Gostos"}
+            className={cn(
+              "flex items-center gap-2 text-muted-foreground rounded-md p-1 -m-1",
+              liked && "text-red-500"
+            )}
           >
-            <Heart
-              size={18}
+            <button
+              type="button"
+              onClick={() => void handleLikeClick()}
+              disabled={liking}
               className={cn(
-                "shrink-0",
-                liked && "fill-red-500 text-red-500"
+                "flex items-center justify-center rounded-md transition-colors hover:text-foreground disabled:opacity-60",
+                liked ? "text-red-500" : "text-muted-foreground"
               )}
-            />
-            <span className="text-sm tabular-nums">{post.stats.likes}</span>
+              title={liked ? "Gostou" : "Gostar"}
+              aria-label={liked ? "Retirar gosto" : "Gostar"}
+            >
+              {liking ? (
+                <Loader2 className="size-[18px] shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Heart
+                  size={18}
+                  className={cn(
+                    "shrink-0",
+                    liked && "fill-red-500 text-red-500"
+                  )}
+                />
+              )}
+            </button>
+            <PostLikesTooltip
+              key={`${post.id}-${post.stats.likes}`}
+              postId={post.id}
+              totalLikes={post.stats.likes}
+              token={token}
+              triggerClassName={cn(
+                "text-sm tabular-nums",
+                liked && "text-red-500 font-medium"
+              )}
+            >
+              {post.stats.likes}
+            </PostLikesTooltip>
           </div>
           <div
             className="flex items-center gap-2 text-muted-foreground"
@@ -150,11 +279,13 @@ export function ItemPostPublicacaoContent({
             <span className="text-sm tabular-nums">{post.stats.comments}</span>
           </div>
         </div>
-        <Button size="sm" className="text-xs" asChild>
-          <Link href={`/detalhesuser?userId=${encodeURIComponent(post.user.id)}`}>
-            Contactar
-          </Link>
-        </Button>
+        {!isOwnPost ? (
+          <Button size="sm" className="text-xs" asChild>
+            <Link href={`/detalhesuser?userId=${encodeURIComponent(post.user.id)}`}>
+              Contactar
+            </Link>
+          </Button>
+        ) : null}
       </CardFooter>
     </Card>
   )
@@ -198,6 +329,7 @@ export function ItemPostPublicacao({
   className,
   accessToken,
 }: ItemPostPublicacaoProps) {
+  const router = useRouter()
   const [post, setPost] = useState<PostDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -267,7 +399,27 @@ export function ItemPostPublicacao({
     )
   }
 
-  return <ItemPostPublicacaoContent post={post} className={className} />
+  return (
+    <ItemPostPublicacaoContent
+      key={post.id}
+      post={post}
+      className={className}
+      accessToken={resolveAuthToken(accessToken)}
+      onPostSaved={setPost}
+      onPostDeleted={() => router.push("/")}
+      onLikeResult={(data) =>
+        setPost((p) =>
+          p
+            ? {
+                ...p,
+                liked_by_me: data.liked,
+                stats: { ...p.stats, likes: data.total_likes },
+              }
+            : null
+        )
+      }
+    />
+  )
 }
 
 export default ItemPostPublicacao

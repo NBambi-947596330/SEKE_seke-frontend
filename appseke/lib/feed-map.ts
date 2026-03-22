@@ -30,6 +30,8 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     imagemPerfil: post.user.avatar?.trim() || "/imageprofissional.png",
     imagemPost: post.image?.trim() || undefined,
     curtidas: post.stats.likes,
+    authorUserId: post.user.id,
+    likedByMe: post.liked_by_me === true,
   }
   return { id: post.id, ...props }
 }

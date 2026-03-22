@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ApiErrorResponse } from "@/types/auth"
 
+function parsePositiveInt(value: string | null, fallback: number): number {
+  if (value == null || value === "") return fallback
+  const n = Number.parseInt(value, 10)
+  if (!Number.isFinite(n) || n < 1) return fallback
+  return n
+}
+
 const getBaseUrl = (): string => {
   const url = process.env.URL_API?.trim()
   if (!url) {
@@ -10,19 +17,17 @@ const getBaseUrl = (): string => {
 }
 
 /**
- * GET /api/posts/:id — ver uma publicação específica (proxy → GET …/posts/:id).
- *
- * - Header opcional: `Authorization: Bearer <token>` — repassado à API (ex. `liked_by_me`).
- * - Resposta de sucesso típica (JSON): `id`, `content`, `image`, `created_at`,
- *   `user: { id, name, avatar }`, `stats: { likes, comments }`, `liked_by_me?` (se logado).
+ * GET /api/likes/post/:postId — proxy para GET …/likes/post/:postId
+ * Ver quem deu like (?page=1&limit=20). Resposta típica: { users: [], total: number }
+ * Authorization opcional (repassado se presente).
  */
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ postId: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const trimmed = id?.trim()
+    const { postId } = await context.params
+    const trimmed = postId?.trim()
     if (!trimmed) {
       return NextResponse.json(
         { message: "ID da publicação inválido." } satisfies ApiErrorResponse,
@@ -30,8 +35,16 @@ export async function GET(
       )
     }
 
+    const { searchParams } = new URL(request.url)
+    const page = parsePositiveInt(searchParams.get("page"), 1)
+    const limit = Math.min(parsePositiveInt(searchParams.get("limit"), 20), 100)
+
     const baseUrl = getBaseUrl()
-    const url = `${baseUrl}/posts/${encodeURIComponent(trimmed)}`
+    const qs = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    })
+    const url = `${baseUrl}/likes/post/${encodeURIComponent(trimmed)}?${qs.toString()}`
 
     const authorization = request.headers.get("authorization")
     const headers: HeadersInit = {
@@ -50,15 +63,13 @@ export async function GET(
     const text = await res.text().catch(() => "")
 
     if (!res.ok) {
-      let message = "Publicação não encontrada."
+      let message = "Não foi possível carregar os gostos."
       if (text.trim()) {
         try {
-          const errBody = JSON.parse(text) as { message?: string }
-          if (typeof errBody.message === "string" && errBody.message) {
-            message = errBody.message
-          }
+          const err = JSON.parse(text) as { message?: string }
+          if (typeof err.message === "string" && err.message) message = err.message
         } catch {
-          /* usar mensagem por defeito */
+          /* ignore */
         }
       }
       return NextResponse.json(
@@ -92,21 +103,25 @@ export async function GET(
     }
 
     return NextResponse.json(
-      { message: "Erro interno ao carregar a publicação." } satisfies ApiErrorResponse,
+      { message: "Erro interno ao carregar os gostos." } satisfies ApiErrorResponse,
       { status: 500 }
     )
   }
 }
 
-/** PUT /api/posts/:id — proxy para PUT /posts/:id (editar conteúdo; Authorization obrigatório) */
-export async function PUT(
+/**
+ * POST /api/likes/post/:postId — proxy para POST …/likes/post/:postId
+ * Dar like numa publicação (Authorization obrigatório).
+ * Resposta típica: { liked: true, total_likes: number }
+ */
+export async function POST(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ postId: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const trimmedId = id?.trim()
-    if (!trimmedId) {
+    const { postId } = await context.params
+    const trimmed = postId?.trim()
+    if (!trimmed) {
       return NextResponse.json(
         { message: "ID da publicação inválido." } satisfies ApiErrorResponse,
         { status: 400 }
@@ -123,48 +138,52 @@ export async function PUT(
       )
     }
 
-    const body = (await request.json().catch(() => null)) as
-      | { content?: string; image?: string | null }
-      | null
-
-    if (!body || typeof body.content !== "string" || !body.content.trim()) {
-      return NextResponse.json(
-        { message: "O conteúdo da publicação é obrigatório." } satisfies ApiErrorResponse,
-        { status: 400 }
-      )
-    }
-
-    const payload: Record<string, unknown> = { content: body.content.trim() }
-    if (body.image !== undefined) {
-      payload.image = body.image
-    }
-
     const baseUrl = getBaseUrl()
-    const url = `${baseUrl}/posts/${encodeURIComponent(trimmedId)}`
+    const url = `${baseUrl}/likes/post/${encodeURIComponent(trimmed)}`
 
     const res = await fetch(url, {
-      method: "PUT",
+      method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        Accept: "application/json",
         Authorization: authorization,
       },
-      body: JSON.stringify(payload),
+      cache: "no-store",
     })
 
-    const data = await res.json().catch(() => ({}))
+    const text = await res.text().catch(() => "")
 
     if (!res.ok) {
-      const message =
-        (data && typeof data.message === "string" && data.message) ||
-        "Não foi possível atualizar a publicação."
-
+      let message = "Não foi possível registar o gosto."
+      if (text.trim()) {
+        try {
+          const err = JSON.parse(text) as { message?: string }
+          if (typeof err.message === "string" && err.message) message = err.message
+        } catch {
+          /* ignore */
+        }
+      }
       return NextResponse.json(
         { message } satisfies ApiErrorResponse,
         { status: res.status }
       )
     }
 
-    return NextResponse.json(data)
+    if (!text.trim()) {
+      return NextResponse.json(
+        { message: "Resposta vazia do servidor." } satisfies ApiErrorResponse,
+        { status: 502 }
+      )
+    }
+
+    try {
+      const data = JSON.parse(text) as unknown
+      return NextResponse.json(data)
+    } catch {
+      return NextResponse.json(
+        { message: "Resposta inválida do servidor." } satisfies ApiErrorResponse,
+        { status: 502 }
+      )
+    }
   } catch (err) {
     if (err instanceof Error && err.message.includes("URL_API")) {
       return NextResponse.json(
@@ -174,21 +193,25 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { message: "Erro interno ao atualizar a publicação." } satisfies ApiErrorResponse,
+      { message: "Erro interno ao registar o gosto." } satisfies ApiErrorResponse,
       { status: 500 }
     )
   }
 }
 
-/** DELETE /api/posts/:id — proxy para DELETE /posts/:id (Authorization obrigatório). Sucesso típico: { message: "Post deleted" } */
+/**
+ * DELETE /api/likes/post/:postId — proxy para DELETE …/likes/post/:postId
+ * Remover like (Authorization obrigatório).
+ * Resposta típica: { liked: false, total_likes: number }
+ */
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ postId: string }> }
 ) {
   try {
-    const { id } = await context.params
-    const trimmedId = id?.trim()
-    if (!trimmedId) {
+    const { postId } = await context.params
+    const trimmed = postId?.trim()
+    if (!trimmed) {
       return NextResponse.json(
         { message: "ID da publicação inválido." } satisfies ApiErrorResponse,
         { status: 400 }
@@ -206,7 +229,7 @@ export async function DELETE(
     }
 
     const baseUrl = getBaseUrl()
-    const url = `${baseUrl}/posts/${encodeURIComponent(trimmedId)}`
+    const url = `${baseUrl}/likes/post/${encodeURIComponent(trimmed)}`
 
     const res = await fetch(url, {
       method: "DELETE",
@@ -214,47 +237,43 @@ export async function DELETE(
         Accept: "application/json",
         Authorization: authorization,
       },
+      cache: "no-store",
     })
 
     const text = await res.text().catch(() => "")
-    let parsedBody: unknown = null
-    if (text.trim()) {
-      try {
-        parsedBody = JSON.parse(text) as unknown
-      } catch {
-        parsedBody = null
-      }
-    }
 
     if (!res.ok) {
-      let message = "Não foi possível eliminar a publicação."
-      if (
-        parsedBody &&
-        typeof parsedBody === "object" &&
-        parsedBody !== null &&
-        "message" in parsedBody &&
-        typeof (parsedBody as { message?: unknown }).message === "string"
-      ) {
-        message = (parsedBody as { message: string }).message
+      let message = "Não foi possível remover o gosto."
+      if (text.trim()) {
+        try {
+          const err = JSON.parse(text) as { message?: string }
+          if (typeof err.message === "string" && err.message) message = err.message
+        } catch {
+          /* ignore */
+        }
       }
-
       return NextResponse.json(
         { message } satisfies ApiErrorResponse,
         { status: res.status }
       )
     }
 
-    if (
-      parsedBody &&
-      typeof parsedBody === "object" &&
-      parsedBody !== null &&
-      "message" in parsedBody &&
-      typeof (parsedBody as { message?: unknown }).message === "string"
-    ) {
-      return NextResponse.json(parsedBody)
+    if (!text.trim()) {
+      return NextResponse.json(
+        { message: "Resposta vazia do servidor." } satisfies ApiErrorResponse,
+        { status: 502 }
+      )
     }
 
-    return NextResponse.json({ message: "Post deleted" })
+    try {
+      const data = JSON.parse(text) as unknown
+      return NextResponse.json(data)
+    } catch {
+      return NextResponse.json(
+        { message: "Resposta inválida do servidor." } satisfies ApiErrorResponse,
+        { status: 502 }
+      )
+    }
   } catch (err) {
     if (err instanceof Error && err.message.includes("URL_API")) {
       return NextResponse.json(
@@ -264,7 +283,7 @@ export async function DELETE(
     }
 
     return NextResponse.json(
-      { message: "Erro interno ao eliminar a publicação." } satisfies ApiErrorResponse,
+      { message: "Erro interno ao remover o gosto." } satisfies ApiErrorResponse,
       { status: 500 }
     )
   }

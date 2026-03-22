@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
-import { Bell, MessageCircle, User, Settings, LogOut, ChevronDown } from "lucide-react"
+import { MessageCircle, User, Settings, LogOut, ChevronDown } from "lucide-react"
 import { DropdownMenu, Avatar } from "radix-ui"
 import { useAuth } from "@/lib/use-auth"
 
@@ -52,13 +52,6 @@ export function UserMenu() {
 
   return (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        className="p-2 text-gray-600 hover:text-green-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
-        aria-label="Notificações"
-      >
-        <Bell size={20} />
-      </button>
       <button
         type="button"
         className="p-2 text-gray-600 hover:text-green-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"

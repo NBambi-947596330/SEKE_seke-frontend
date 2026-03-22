@@ -1,4 +1,5 @@
 import type { ApiErrorResponse } from "@/types/auth"
+import { parseLikedByMeFromPostLike } from "@/lib/parse-liked-by-me"
 import type { PostDetail } from "@/types/post"
 import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
@@ -63,6 +64,7 @@ function parseFeedUser(
     const u = nested as Record<string, unknown>
     const id =
       pickId(u.id) ??
+      pickId(u._id) ??
       pickId(u.user_id) ??
       pickString(u.uuid) ??
       `user-${postIdFallback}`
@@ -85,6 +87,12 @@ function parseFeedUser(
   const id =
     pickId(o.user_id) ??
     pickId(o.userId) ??
+    pickId(o.created_by) ??
+    pickId(o.createdBy) ??
+    pickId(o.owner_id) ??
+    pickId(o.ownerId) ??
+    pickId(o.author_id) ??
+    pickId(o.authorId) ??
     `user-${postIdFallback}`
   const name =
     pickString(o.user_name) ??
@@ -100,7 +108,10 @@ function parseFeedUser(
  */
 function parseFeedPostItem(raw: unknown): PostDetail | null {
   if (!raw || typeof raw !== "object") return null
-  const o = raw as Record<string, unknown>
+  let o = raw as Record<string, unknown>
+  if (o.post && typeof o.post === "object") {
+    o = o.post as Record<string, unknown>
+  }
 
   const id = pickId(o.id) ?? pickId(o.post_id) ?? pickId(o.uuid)
   if (!id) return null
@@ -134,11 +145,9 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
     stats: { likes, comments },
   }
 
-  if (typeof o.liked_by_me === "boolean") {
-    detail.liked_by_me = o.liked_by_me
-  }
-  if (typeof o.likedByMe === "boolean") {
-    detail.liked_by_me = o.likedByMe
+  const likedByMe = parseLikedByMeFromPostLike(o)
+  if (likedByMe !== undefined) {
+    detail.liked_by_me = likedByMe
   }
 
   return detail

@@ -26,5 +26,9 @@ export function toProfissionalFeedItem(
   row: ProfissionalFeedRow
 ): Extract<FeedItem, { tipo: "profissional" }> {
   const { id, ...data } = row
-  return { tipo: "profissional", id, data }
+  return {
+    tipo: "profissional",
+    id,
+    data: { ...data, postId: id },
+  }
 }
