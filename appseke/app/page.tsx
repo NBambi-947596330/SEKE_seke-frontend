@@ -283,7 +283,7 @@ export default function Home() {
       : PROFISSIONAIS_MOCK;
 
   return (
-    <div className="container mx-auto  lg:px-8 mt-4 py-20 justify-center items-center">
+    <div className="container mx-auto px-4 sm:px-5 md:px-6 lg:px-8 mt-4 py-20 justify-center items-center">
       <div className="flex gap-6">
         <aside
           className="hidden lg:block space-y-6"
@@ -312,16 +312,16 @@ export default function Home() {
               <HeroSection />
             </div>
 
-            <div className="px-4 sm:px-0 mt-4 mb-6">
+            <div className="mt-4 mb-6">
               <ItemPostCriar onSuccess={handlePostCreated} />
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-3 mt-2">
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold text-gray-900">Filtro</h2>
               </div>
 
-              <div className="flex space-x-2">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setFiltro('todos')}
                   className={`flex-1 py-2  rounded-md text-sm font-medium cursor-pointer transition-colors ${filtro === 'todos'
@@ -355,7 +355,7 @@ export default function Home() {
             </div>
 
             {feedError && (
-              <p className="text-sm text-destructive mt-4 px-4 sm:px-0" role="alert">
+              <p className="text-sm text-destructive mt-4" role="alert">
                 {feedError}
               </p>
             )}
