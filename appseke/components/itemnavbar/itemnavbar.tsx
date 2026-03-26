@@ -42,7 +42,7 @@ export function Navbar() {
 
     return (
         <>
-        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-white/80">
+        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-white/80 [&_a]:no-underline [&_a:hover]:no-underline [&_a:focus]:no-underline">
             <div className="mx-auto max-w-[1600px] px-3 sm:px-4 lg:px-8">
                 <div className="flex min-h-14 items-center gap-2 py-2 sm:min-h-16 sm:gap-3">
                     {/* Logo */}

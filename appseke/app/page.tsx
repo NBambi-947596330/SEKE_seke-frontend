@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Suspense, useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import HeroSection from "@/components/itemheaderpost/itemheaderpost";
 import ItemPostProfissonal from "@/components/itempostprofissional/itempostprofissional";
@@ -108,7 +108,7 @@ const PROFISSIONAIS_MOCK: ProfissionalFeedRow[] = [
   }
 ];
 
-export default function Home() {
+function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filtroLocal, setFiltroLocal] = useState<
@@ -488,4 +488,12 @@ export default function Home() {
       </div>
     </div>
   )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">A carregar…</div>}>
+      <HomeInner />
+    </Suspense>
+  );
 }

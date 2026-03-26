@@ -55,7 +55,7 @@ export function UserMenu() {
     } finally {
       logout()
       await signOut({ redirect: false })
-      router.push("/auth/login")
+      router.push("/")
     }
   }
 
