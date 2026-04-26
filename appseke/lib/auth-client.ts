@@ -6,8 +6,13 @@ import type {
   ApiErrorResponse,
 } from "@/types/auth"
 
-const LOGIN_API = "/api/auth/credentials/login"
-const REGISTER_API = "/api/auth/credentials/register"
+const EXTERNAL_API_BASE = process.env.NEXT_PUBLIC_URL_API?.trim()
+const LOGIN_API = EXTERNAL_API_BASE
+  ? `${EXTERNAL_API_BASE}/auth/user/login`
+  : "/api/auth/credentials/login"
+const REGISTER_API = EXTERNAL_API_BASE
+  ? `${EXTERNAL_API_BASE}/auth/user/register`
+  : "/api/auth/credentials/register"
 
 export class AuthError extends Error {
   constructor(
@@ -33,6 +38,64 @@ export interface LoginFailure {
 
 export type LoginOutcome = LoginResult | LoginFailure
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null
+}
+
+function readString(source: Record<string, unknown> | null, key: string): string | undefined {
+  if (!source) return undefined
+  const value = source[key]
+  return typeof value === "string" && value.trim() ? value : undefined
+}
+
+function normalizeLoginResponse(raw: unknown): LoginResponse {
+  const root = toRecord(raw)
+  const data = toRecord(root?.data)
+  const nestedAuth = toRecord(data?.auth)
+  const nestedUser =
+    toRecord(root?.user) ??
+    toRecord(data?.user) ??
+    toRecord(data?.perfil) ??
+    toRecord(root?.perfil)
+
+  const token =
+    readString(root, "token") ??
+    readString(root, "accessToken") ??
+    readString(root, "access_token") ??
+    readString(data, "token") ??
+    readString(data, "accessToken") ??
+    readString(data, "access_token") ??
+    readString(nestedAuth, "token") ??
+    readString(nestedAuth, "accessToken") ??
+    readString(nestedAuth, "access_token")
+
+  const refreshToken =
+    readString(root, "refreshToken") ??
+    readString(root, "refresh_token") ??
+    readString(data, "refreshToken") ??
+    readString(data, "refresh_token")
+
+  const userId =
+    readString(nestedUser, "id") ??
+    (typeof nestedUser?.id === "number" ? String(nestedUser.id) : undefined)
+
+  return {
+    token,
+    accessToken: readString(root, "accessToken") ?? readString(data, "accessToken") ?? token,
+    refreshToken,
+    user: nestedUser
+      ? {
+          id: userId ?? "",
+          email: readString(nestedUser, "email"),
+          name: readString(nestedUser, "name"),
+          username: readString(nestedUser, "username"),
+          image: readString(nestedUser, "image") ?? readString(nestedUser, "avatar"),
+        }
+      : undefined,
+    message: readString(root, "message") ?? readString(data, "message"),
+  }
+}
+
 /**
  * Envia credenciais para o endpoint de login (usa API route que lê NEXT_PUBLIC_URL_API do .env).
  * Retorna resultado tipado ou falha com mensagem.
@@ -46,12 +109,12 @@ export async function loginWithCredentials(
     body: JSON.stringify(credentials),
   })
 
-  const data = (await res.json().catch(() => ({}))) as LoginResponse | ApiErrorResponse
+  const rawData = (await res.json().catch(() => ({}))) as LoginResponse | ApiErrorResponse
 
   if (!res.ok) {
     const message =
-      "message" in data && typeof data.message === "string"
-        ? data.message
+      "message" in rawData && typeof rawData.message === "string"
+        ? rawData.message
         : "Não foi possível fazer login. Tente novamente."
     return {
       success: false,
@@ -60,9 +123,11 @@ export async function loginWithCredentials(
     }
   }
 
+  const data = normalizeLoginResponse(rawData)
+
   return {
     success: true,
-    data: data as LoginResponse,
+    data,
   }
 }
 

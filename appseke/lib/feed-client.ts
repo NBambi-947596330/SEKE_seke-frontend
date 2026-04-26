@@ -3,7 +3,7 @@ import { parseLikedByMeFromPostLike } from "@/lib/parse-liked-by-me"
 import type { PostDetail } from "@/types/post"
 import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
-const FEED_GLOBAL_API = "/api/feed/global"
+const FEED_GLOBAL_API = "/api/posts/posts"
 const FEED_MAIN_API = "/api/feed"
 
 function parseNumberField(v: unknown): number | null {
@@ -36,11 +36,14 @@ function pickContent(o: Record<string, unknown>): string {
     const v = o[k]
     if (typeof v === "string") return v
   }
+  if (typeof o.title === "string") return o.title
   return ""
 }
 
 function pickCreatedAt(o: Record<string, unknown>): string {
   const raw =
+    pickString(o.published_at) ??
+    pickString(o.publishedAt) ??
     pickString(o.created_at) ??
     pickString(o.createdAt) ??
     pickString(o.updated_at) ??
@@ -119,6 +122,51 @@ function parseFollowingAuthor(
   return undefined
 }
 
+function inferMediaKindFromUrl(url: string): "image" | "video" | null {
+  const lower = url.toLowerCase()
+  if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(lower)) return "video"
+  if (/\.(jpg|jpeg|png|gif|webp|avif|svg)(\?|#|$)/i.test(lower)) return "image"
+  if (lower.includes("/video/upload/")) return "video"
+  if (lower.includes("/image/upload/")) return "image"
+  return null
+}
+
+function parseMediaFromTuple(
+  tuple: unknown[]
+): { type: PostDetail["media_type"]; url: string | null } {
+  if (tuple.length < 2) return { type: null, url: null }
+  const rawType = tuple[0]
+  const rawUrl = tuple[1]
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+    return { type: null, url: null }
+  }
+  const url = rawUrl.trim()
+  const normalizedType =
+    typeof rawType === "string" ? rawType.trim().toLowerCase() : ""
+
+  if (normalizedType === "image" || normalizedType === "imagem") {
+    return { type: "image", url }
+  }
+  if (normalizedType === "video" || normalizedType === "vídeo") {
+    return { type: "video", url }
+  }
+
+  const inferred = inferMediaKindFromUrl(url)
+  if (inferred) return { type: inferred, url }
+
+  if (!/^https?:\/\//i.test(url)) {
+    return { type: null, url: null }
+  }
+
+  return { type: null, url: null }
+}
+
+function pickUrlFromText(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null
+  const match = value.match(/https?:\/\/\S+/i)
+  return match ? match[0].trim() : null
+}
+
 /**
  * Item de lista no feed — tolerante a formatos reais da API (ids numéricos, author, etc.).
  */
@@ -129,11 +177,13 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
     o = o.post as Record<string, unknown>
   }
 
-  const id = pickId(o.id) ?? pickId(o.post_id) ?? pickId(o.uuid)
+  const id = pickId(o.id) ?? pickId(o._id) ?? pickId(o.post_id) ?? pickId(o.uuid)
   if (!id) return null
 
   const content = pickContent(o)
   const created_at = pickCreatedAt(o)
+  const title =
+    typeof o.title === "string" && o.title.trim() ? o.title.trim() : null
 
   const userNestedForFollow =
     (o.user && typeof o.user === "object" ? (o.user as Record<string, unknown>) : null) ??
@@ -156,13 +206,39 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
         ? o.image
         : null
 
+  let mediaType: PostDetail["media_type"] = null
+  let mediaUrl: PostDetail["media_url"] = null
+  if (Array.isArray(o.midia) && o.midia.length >= 2) {
+    const parsed = parseMediaFromTuple(o.midia)
+    mediaType = parsed.type
+    mediaUrl = parsed.url
+  }
+  // Alguns itens chegam como `midia: "ofline"` mas trazem URL dentro de `content`.
+  if (!mediaUrl) {
+    const contentUrl = pickUrlFromText(o.content)
+    if (contentUrl) {
+      mediaType = "image"
+      mediaUrl = contentUrl
+    }
+  }
+  if (!mediaUrl && image) {
+    mediaType = "image"
+    mediaUrl = image
+  }
+
   const detail: PostDetail = {
     id,
     content,
     created_at,
     image,
+    media_type: mediaType,
+    media_url: mediaUrl,
     user,
     stats: { likes, comments },
+  }
+
+  if (title) {
+    detail.title = title
   }
 
   const likedByMe = parseLikedByMeFromPostLike(o)
@@ -181,6 +257,7 @@ function parseFeedPostItem(raw: unknown): PostDetail | null {
 /** Vários backends envolvem a lista em `posts`, `data.posts`, `items`, etc. */
 function extractPostsArray(body: Record<string, unknown>): unknown[] {
   if (Array.isArray(body.posts)) return body.posts
+  if (Array.isArray(body.data)) return body.data
 
   const data = body.data
   if (data && typeof data === "object") {
@@ -243,18 +320,30 @@ function parsePagination(
 
 function normalizePagination(p: Record<string, unknown>): GlobalFeedPagination {
   const page = parseNumberField(p.page) ?? 1
-  const limit = parseNumberField(p.limit) ?? 10
+  const limit =
+    parseNumberField(p.limit) ??
+    parseNumberField(p.per_page) ??
+    parseNumberField(p.pageSize) ??
+    10
   const total = parseNumberField(p.total) ?? undefined
   const total_pages =
     parseNumberField(p.total_pages) ??
     parseNumberField(p.totalPages) ??
     undefined
-  const has_more =
+  let has_more: boolean | undefined =
     typeof p.has_more === "boolean"
       ? p.has_more
       : typeof p.hasMore === "boolean"
         ? p.hasMore
         : undefined
+  if (
+    has_more === undefined &&
+    total_pages != null &&
+    total_pages > 0 &&
+    page > 0
+  ) {
+    has_more = page < total_pages
+  }
 
   return {
     page,
@@ -350,7 +439,7 @@ async function fetchFeedFromUrl(
 }
 
 /**
- * GET /api/feed/global — feed global (posts recentes; token opcional).
+ * GET /api/posts/posts — lista global de publicações (token opcional no proxy).
  */
 export async function fetchGlobalFeed(
   options: FetchGlobalFeedOptions = {}

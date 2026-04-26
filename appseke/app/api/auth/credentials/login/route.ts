@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = getBaseUrl()
-    const loginEndpoint = `${baseUrl}/auth/login`
+    const loginEndpoint = `${baseUrl}/auth/user/login`
 
     const payload: LoginRequest = {
       email: email.trim(),

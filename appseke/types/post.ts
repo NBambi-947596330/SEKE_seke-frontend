@@ -1,6 +1,9 @@
 /** Corpo enviado em POST /api/posts */
 export interface CreatePostRequest {
+  title?: string
   content: string
+  /** Formato novo da API: ex. ["video", "https://..."] */
+  midia?: string[]
   /** Opcional: URL, base64 ou data URL, conforme a API */
   image?: string
 }
@@ -93,7 +96,11 @@ export interface PostDetailStats {
 export interface PostDetail {
   id: string
   content: string
+  /** Título vindo da API (ex. GET /posts/posts) */
+  title?: string | null
   image?: string | null
+  media_type?: "image" | "video" | null
+  media_url?: string | null
   created_at: string
   user: PostDetailUser
   stats: PostDetailStats

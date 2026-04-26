@@ -133,7 +133,9 @@ export function ItemPostPublicacaoContent({
   }
 
   const avatarSrc = resolveUserAvatarUrl(post.user.avatar)
-  const imageSrc = post.image?.trim() || ""
+  const mediaType = post.media_type ?? (post.image ? "image" : null)
+  const mediaUrl = post.media_url?.trim() || post.image?.trim() || ""
+  const imageSrc = mediaType === "image" ? mediaUrl : ""
   const imageAlt =
     post.content.trim().slice(0, 100) || "Imagem da publicação"
   const liked = post.liked_by_me === true
@@ -181,7 +183,16 @@ export function ItemPostPublicacaoContent({
         </div>
       </CardHeader>
 
-      {imageSrc ? (
+      {mediaType === "video" && mediaUrl ? (
+        <div className="relative w-full aspect-video max-h-80 bg-black">
+          <video
+            src={mediaUrl}
+            controls
+            className="h-full w-full object-cover"
+            preload="metadata"
+          />
+        </div>
+      ) : imageSrc ? (
         <div className="relative w-full aspect-video max-h-80 bg-muted">
           <Image
             src={imageSrc}

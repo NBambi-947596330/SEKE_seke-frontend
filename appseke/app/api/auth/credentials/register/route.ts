@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = getBaseUrl()
-    const registerEndpoint = `${baseUrl}/auth/register`
+    const registerEndpoint = `${baseUrl}/auth/user/register`
 
     const payload: RegisterRequest = {
       name: name.trim(),

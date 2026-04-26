@@ -75,39 +75,6 @@ const SOLICITACOES_MOCK: SolicitacaoFeedRow[] = [
   }
 ];
 
-const PROFISSIONAIS_MOCK: ProfissionalFeedRow[] = [
-  {
-    id: 'prof-mock-1',
-    nome: "Carlos Ferreira",
-    data: "—",
-    descricao: "Disponível para serviços de electricidade residencial e comercial.",
-    titulo: "ELECTRICISTA CERTIFICADO",
-    imagemPerfil: "/user.svg",
-    imagemPost: "/imageprofissional.png",
-    curtidas: 28
-  },
-  {
-    id: 'prof-mock-2',
-    nome: "Ana Paula",
-    data: "—",
-    descricao: "Especialista em canalização e instalações hidráulicas.",
-    titulo: "CANALIZADORA PROFISSIONAL",
-    imagemPerfil: "/user.svg",
-    imagemPost: "/imageprofissional.png",
-    curtidas: 42
-  },
-  {
-    id: 'prof-mock-3',
-    nome: "Pedro Mendes",
-    data: "—",
-    descricao: "Pintor com experiência em interiores e exteriores.",
-    titulo: "PINTOR ESPECIALISTA",
-    imagemPerfil: "/user.svg",
-    imagemPost: "/imageprofissional.png",
-    curtidas: 15
-  }
-];
-
 function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -132,7 +99,7 @@ function HomeInner() {
   const [feedPosts, setFeedPosts] = useState<PostDetail[]>([]);
   const [feedPagination, setFeedPagination] = useState<GlobalFeedPagination>({
     page: 1,
-    limit: 10,
+    limit: 50,
   });
   const [feedPage, setFeedPage] = useState(1);
   const [feedReloadKey, setFeedReloadKey] = useState(0);
@@ -147,7 +114,7 @@ function HomeInner() {
       const token = getSessionToken();
       const result = await fetchGlobalFeed({
         page: feedPage,
-        limit: 10,
+        limit: 50,
         token,
       });
 
@@ -238,19 +205,6 @@ function HomeInner() {
     []
   );
 
-  const interleaveFeedItems = (
-    solicitacaoItems: FeedItem[],
-    profissionalItems: FeedItem[]
-  ): FeedItem[] => {
-    const interleaved: FeedItem[] = [];
-    const n = Math.max(solicitacaoItems.length, profissionalItems.length);
-    for (let i = 0; i < n; i++) {
-      if (i < solicitacaoItems.length) interleaved.push(solicitacaoItems[i]);
-      if (i < profissionalItems.length) interleaved.push(profissionalItems[i]);
-    }
-    return interleaved;
-  };
-
   const solicitacoesItems: FeedItem[] = useMemo(
     () => SOLICITACOES_MOCK.map(toSolicitacaoFeedItem),
     []
@@ -264,9 +218,9 @@ function HomeInner() {
     [feedPosts]
   );
 
+  /** Todos os posts da API em sequência; solicitações mock só depois (sem intercalar). */
   const todosItems = useMemo(
-    (): FeedItem[] =>
-      interleaveFeedItems(solicitacoesItems, profissionaisItemsApi),
+    (): FeedItem[] => [...profissionaisItemsApi, ...solicitacoesItems],
     [solicitacoesItems, profissionaisItemsApi]
   );
 
@@ -296,10 +250,13 @@ function HomeInner() {
     (typeof feedPagination.totalPages === 'number' &&
       feedPage < feedPagination.totalPages);
 
-  const sidebarProfRows: ProfissionalFeedRow[] =
-    feedPosts.length > 0
-      ? feedPosts.slice(0, 3).map(postDetailToProfissionalFeedRow)
-      : PROFISSIONAIS_MOCK;
+  const sidebarProfRows: ProfissionalFeedRow[] = useMemo(
+    () =>
+      feedPosts.length > 0
+        ? feedPosts.slice(0, 3).map(postDetailToProfissionalFeedRow)
+        : [],
+    [feedPosts]
+  );
 
   return (
     <div className="mt-4 justify-center items-center">
@@ -444,23 +401,29 @@ function HomeInner() {
               <h3 className="font-semibold">Profissionais recomendados</h3>
             </div>
             <div className="p-4 space-y-4">
-              {sidebarProfRows.map((prof) => (
-                <div key={prof.id} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gray-200 rounded-full" />
-                    <div>
-                      <p className="font-medium text-sm">{prof.nome}</p>
-                      <p className="text-xs text-gray-500">{prof.titulo}</p>
+              {sidebarProfRows.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  As publicações do feed aparecem aqui quando existirem autores na lista.
+                </p>
+              ) : (
+                sidebarProfRows.map((prof) => (
+                  <div key={prof.id} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gray-200 rounded-full" />
+                      <div>
+                        <p className="font-medium text-sm">{prof.nome}</p>
+                        <p className="text-xs text-gray-500">{prof.titulo}</p>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      className="text-xs text-[#18B481] font-medium hover:text-[#18B481]/80 transition-colors cursor-pointer"
+                    >
+                      Contactar
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="text-xs text-[#18B481] font-medium hover:text-[#18B481]/80 transition-colors cursor-pointer"
-                  >
-                    Contactar
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
