@@ -14,6 +14,22 @@ import {
   FileText,
   ChevronDown,
   MessageSquare,
+  UserRound,
+  Goal,
+  Phone,
+  GraduationCap,
+  Flag,
+  Building2,
+  Sparkles,
+  Link as LinkIcon,
+  Globe,
+  Instagram,
+  Facebook,
+  Linkedin,
+  Youtube,
+  Send,
+  MessageCircle,
+  Music2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -45,7 +61,18 @@ interface PerfilUser {
 }
 
 interface PerfilInfo {
+  profile_type?: string
   bio?: string
+  objective?: string | null
+  phone?: string[]
+  birth_date?: string | null
+  grade?: string | null
+  nationality?: string | null
+  city?: string | null
+  interest?: string | null
+  social_link?: string | null
+  web_url?: string[]
+  cove_image?: string | null
   location?: string
   member_since?: string
 }
@@ -54,7 +81,133 @@ interface ProfileFormState {
   name: string
   bio: string
   avatar: string
+  profile_type: string
+  objective: string
+  phone: string
+  birth_date: string
+  grade: string
+  nationality: string
+  city: string
+  interest: string
+  social_link: string
+  web_url: string
+  cove_image: string
   location: string
+}
+
+function pickPerfilInfoFromUnknown(raw: unknown): Partial<PerfilInfo> | null {
+  if (!raw || typeof raw !== "object") return null
+  const root = raw as Record<string, unknown>
+  const o =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : root
+
+  const picked: Partial<PerfilInfo> = {}
+  if (typeof o.profile_type === "string") picked.profile_type = o.profile_type
+  if (typeof o.bio === "string") picked.bio = o.bio
+  if (typeof o.objective === "string" || o.objective == null) {
+    picked.objective = (o.objective as string | null) ?? null
+  }
+  if (Array.isArray(o.phone)) {
+    picked.phone = o.phone.filter((x): x is string => typeof x === "string")
+  }
+  if (typeof o.birth_date === "string" || o.birth_date == null) {
+    picked.birth_date = (o.birth_date as string | null) ?? null
+  }
+  if (typeof o.grade === "string" || o.grade == null) {
+    picked.grade = (o.grade as string | null) ?? null
+  }
+  if (typeof o.nationality === "string" || o.nationality == null) {
+    picked.nationality = (o.nationality as string | null) ?? null
+  }
+  if (typeof o.city === "string" || o.city == null) {
+    picked.city = (o.city as string | null) ?? null
+  }
+  if (typeof o.interest === "string" || o.interest == null) {
+    picked.interest = (o.interest as string | null) ?? null
+  }
+  if (typeof o.social_link === "string" || o.social_link == null) {
+    picked.social_link = (o.social_link as string | null) ?? null
+  }
+  if (Array.isArray(o.web_url)) {
+    picked.web_url = o.web_url.filter((x): x is string => typeof x === "string")
+  }
+  if (typeof o.cove_image === "string" || o.cove_image == null) {
+    picked.cove_image = (o.cove_image as string | null) ?? null
+  }
+  if (typeof o.location === "string") picked.location = o.location
+  if (typeof o.member_since === "string") picked.member_since = o.member_since
+
+  return Object.keys(picked).length > 0 ? picked : null
+}
+
+function parseCommaSeparatedList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function normalizeExternalUrl(raw: string): string | null {
+  const input = raw.trim()
+  if (!input) return null
+  const withProtocol = /^https?:\/\//i.test(input) ? input : `https://${input}`
+  try {
+    const parsed = new URL(withProtocol)
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+function compactLinkLabel(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+  if (cleaned.length <= 14) return cleaned
+  return `${cleaned.slice(0, 14)}...`
+}
+
+function detectSocialNetworkKey(raw: string):
+  | "instagram"
+  | "facebook"
+  | "linkedin"
+  | "tiktok"
+  | "x"
+  | "youtube"
+  | "whatsapp"
+  | "telegram"
+  | "other" {
+  const normalized = normalizeExternalUrl(raw)
+  if (!normalized) return "other"
+  const host = new URL(normalized).hostname.toLowerCase()
+  if (host.includes("instagram.com")) return "instagram"
+  if (host.includes("facebook.com") || host.includes("fb.com")) return "facebook"
+  if (host.includes("linkedin.com")) return "linkedin"
+  if (host.includes("tiktok.com")) return "tiktok"
+  if (host.includes("x.com") || host.includes("twitter.com")) return "x"
+  if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube"
+  if (host.includes("whatsapp.com") || host.includes("wa.me")) return "whatsapp"
+  if (host.includes("telegram.me") || host.includes("t.me")) return "telegram"
+  return "other"
+}
+
+function pickUserFromUnknown(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null
+  const o = raw as Record<string, unknown>
+
+  if (o.user && typeof o.user === "object") {
+    return o.user as Record<string, unknown>
+  }
+  if (o.data && typeof o.data === "object") {
+    return o.data as Record<string, unknown>
+  }
+  if (o.id != null || o.name != null || o.email != null || o.avatar != null) {
+    return o
+  }
+  return null
 }
 
 function syncUserDataInSession(partial: {
@@ -182,6 +335,17 @@ export default function PerfilPage() {
     name: "",
     bio: "",
     avatar: "",
+    profile_type: "pessoal",
+    objective: "",
+    phone: "",
+    birth_date: "",
+    grade: "",
+    nationality: "",
+    city: "",
+    interest: "",
+    social_link: "",
+    web_url: "",
+    cove_image: "",
     location: "",
   })
   const [savingProfile, setSavingProfile] = useState(false)
@@ -203,6 +367,17 @@ export default function PerfilPage() {
       name: perfilUser?.name ?? user?.name ?? "",
       bio: perfilInfo?.bio ?? "",
       avatar: perfilUser?.avatar ?? user?.image ?? "",
+      profile_type: perfilInfo?.profile_type ?? "pessoal",
+      objective: perfilInfo?.objective ?? "",
+      phone: Array.isArray(perfilInfo?.phone) ? perfilInfo.phone.join(", ") : "",
+      birth_date: perfilInfo?.birth_date ?? "",
+      grade: perfilInfo?.grade ?? "",
+      nationality: perfilInfo?.nationality ?? "",
+      city: perfilInfo?.city ?? "",
+      interest: perfilInfo?.interest ?? "",
+      social_link: perfilInfo?.social_link ?? "",
+      web_url: Array.isArray(perfilInfo?.web_url) ? perfilInfo.web_url.join(", ") : "",
+      cove_image: perfilInfo?.cove_image ?? "",
       location: perfilInfo?.location ?? "",
     })
     setEditProfileOpen(true)
@@ -218,24 +393,69 @@ export default function PerfilPage() {
 
     setSavingProfile(true)
     try {
-      const res = await fetch("/api/users/profile", {
+      const authUserPayload = {
+        name: profileForm.name.trim(),
+        avatar: profileForm.avatar.trim(),
+        status: "active",
+      }
+
+      const authUserRes = await fetch("/api/auth/user/profile", {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          name: profileForm.name.trim(),
-          bio: profileForm.bio.trim(),
-          avatar: profileForm.avatar.trim(),
-          location: profileForm.location.trim(),
-        }),
+        body: JSON.stringify(authUserPayload),
+      })
+
+      const authUserData = (await authUserRes.json().catch(() => null)) as
+        | {
+            message?: string
+            user?: Record<string, unknown>
+            data?: Record<string, unknown>
+          }
+        | null
+
+      if (!authUserRes.ok) {
+        toast.error(
+          typeof authUserData?.message === "string"
+            ? authUserData.message
+            : "Não foi possível atualizar nome e avatar."
+        )
+        return
+      }
+
+      const payload = {
+        profile_type: profileForm.profile_type.trim() || "pessoal",
+        bio: profileForm.bio.trim(),
+        objective: profileForm.objective.trim() || null,
+        phone: parseCommaSeparatedList(profileForm.phone),
+        birth_date: profileForm.birth_date.trim() || null,
+        grade: profileForm.grade.trim() || null,
+        nationality: profileForm.nationality.trim() || null,
+        city: profileForm.city.trim() || null,
+        interest: profileForm.interest.trim() || null,
+        social_link: profileForm.social_link.trim() || null,
+        web_url: parseCommaSeparatedList(profileForm.web_url),
+        cove_image: profileForm.cove_image.trim() || null,
+        location: profileForm.location.trim(),
+      }
+
+      const res = await fetch("/api/profiles/me", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       })
 
       const data = (await res.json().catch(() => null)) as
         | {
             message?: string
             user?: Record<string, unknown>
+            data?: Record<string, unknown>
+            perfil?: Record<string, unknown>
           }
         | null
 
@@ -248,7 +468,31 @@ export default function PerfilPage() {
         return
       }
 
-      const u = data?.user
+      const authUser = pickUserFromUnknown(authUserData)
+      if (authUser && typeof authUser === "object") {
+        setPerfilUser((prev) => ({
+          ...(prev ?? {}),
+          id:
+            authUser.id != null
+              ? typeof authUser.id === "number" || typeof authUser.id === "string"
+                ? authUser.id
+                : prev?.id
+              : prev?.id,
+          name: typeof authUser.name === "string" ? authUser.name : prev?.name,
+          email: typeof authUser.email === "string" ? authUser.email : prev?.email,
+          username:
+            typeof authUser.username === "string" ? authUser.username : prev?.username,
+          avatar:
+            typeof authUser.avatar === "string" ? authUser.avatar : prev?.avatar,
+        }))
+
+        syncUserDataInSession({
+          name: typeof authUser.name === "string" ? authUser.name : undefined,
+          avatar: typeof authUser.avatar === "string" ? authUser.avatar : undefined,
+        })
+      }
+
+      const u = pickUserFromUnknown(data)
       if (u && typeof u === "object") {
         setPerfilUser((prev) => ({
           ...(prev ?? {}),
@@ -290,6 +534,18 @@ export default function PerfilPage() {
         })
       }
 
+      const perfilFromNested = pickPerfilInfoFromUnknown(data?.perfil)
+      const perfilFromRoot = pickPerfilInfoFromUnknown(data)
+      const perfilFromData = pickPerfilInfoFromUnknown(data?.data)
+      const perfilToApply = perfilFromNested ?? perfilFromRoot
+      const perfilMerged = perfilToApply ?? perfilFromData
+      if (perfilMerged) {
+        setPerfilInfo((prev) => ({
+          ...(prev ?? {}),
+          ...perfilMerged,
+        }))
+      }
+
       toast.success("Perfil atualizado.")
       setEditProfileOpen(false)
       router.refresh()
@@ -318,28 +574,52 @@ export default function PerfilPage() {
 
       setIsPerfilLoading(true)
       try {
-        const res = await fetch("/api/auth/perfil", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
+        const headers = {
+          Authorization: `Bearer ${token}`,
+        }
+        const [authUserRes, profileRes] = await Promise.all([
+          fetch("/api/auth/user/profile", { method: "GET", headers }),
+          fetch("/api/profiles/me", { method: "GET", headers }),
+        ])
 
-        if (!res.ok) return
-
-        const data = (await res.json().catch(() => null)) as
+        const authUserData = (await authUserRes.json().catch(() => null)) as
           | {
               user?: PerfilUser
+              data?: PerfilUser
+            }
+          | null
+        const profileData = (await profileRes.json().catch(() => null)) as
+          | {
+              user?: PerfilUser
+              data?: PerfilUser
               perfil?: PerfilInfo
             }
           | null
 
         if (!cancelled) {
-          if (data?.user) {
-            setPerfilUser(data.user)
+          const resolvedUser =
+            (pickUserFromUnknown(authUserData) as PerfilUser | null) ??
+            (pickUserFromUnknown(profileData) as PerfilUser | null)
+          if (resolvedUser) {
+            setPerfilUser((prev) => ({
+              ...(prev ?? {}),
+              ...resolvedUser,
+            }))
+            syncUserDataInSession({
+              name: typeof resolvedUser.name === "string" ? resolvedUser.name : undefined,
+              avatar:
+                typeof resolvedUser.avatar === "string" ? resolvedUser.avatar : undefined,
+            })
           }
-          if (data?.perfil) {
-            setPerfilInfo(data.perfil)
+          const perfilFromNested = pickPerfilInfoFromUnknown(profileData?.perfil)
+          const perfilFromRoot = pickPerfilInfoFromUnknown(profileData)
+          const perfilFromData = pickPerfilInfoFromUnknown(profileData?.data)
+          const perfilToApply = perfilFromNested ?? perfilFromRoot ?? perfilFromData
+          if (perfilToApply) {
+            setPerfilInfo((prev) => ({
+              ...(prev ?? {}),
+              ...perfilToApply,
+            }))
           }
         }
       } finally {
@@ -452,6 +732,26 @@ export default function PerfilPage() {
   const locationLabel = perfilInfo?.location?.trim()
     ? perfilInfo.location
     : "Localização não definida"
+  const profileTypeLabel = perfilInfo?.profile_type?.trim() || "Não definido"
+  const objectiveLabel = perfilInfo?.objective?.trim() || "Não definido"
+  const phoneLabel =
+    Array.isArray(perfilInfo?.phone) && perfilInfo.phone.length > 0
+      ? perfilInfo.phone.join(", ")
+      : "Não definido"
+  const gradeLabel = perfilInfo?.grade?.trim() || "Não definido"
+  const nationalityLabel = perfilInfo?.nationality?.trim() || "Não definido"
+  const cityLabel = perfilInfo?.city?.trim() || "Não definido"
+  const interestLabel = perfilInfo?.interest?.trim() || "Não definido"
+  const socialLinkRaw = perfilInfo?.social_link?.trim() || ""
+  const socialLinkHref = normalizeExternalUrl(socialLinkRaw)
+  const socialLinkCompact = socialLinkRaw ? compactLinkLabel(socialLinkRaw) : ""
+  const socialNetworkKey = socialLinkRaw
+    ? detectSocialNetworkKey(socialLinkRaw)
+    : "other"
+  const webUrlLabel =
+    Array.isArray(perfilInfo?.web_url) && perfilInfo.web_url.length > 0
+      ? perfilInfo.web_url.join(", ")
+      : "Não definido"
 
   const usernameShort =
     displayUser.username && displayUser.username.length > 24
@@ -655,6 +955,125 @@ export default function PerfilPage() {
               </p>
             </Card>
 
+            <Card>
+              <div className="mb-5 flex items-center justify-between">
+                <h3 className="font-bold">Informações do perfil</h3>
+                <button
+                  type="button"
+                  onClick={openEditProfile}
+                  aria-label="Editar informações do perfil"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Pencil size={16} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <MapPin size={14} className="text-primary" />
+                    Localização
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{locationLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <UserRound size={14} className="text-primary" />
+                    Tipo de perfil
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{profileTypeLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Goal size={14} className="text-primary" />
+                    Objetivo
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{objectiveLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Phone size={14} className="text-primary" />
+                    Telefone
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{phoneLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <GraduationCap size={14} className="text-primary" />
+                    Grau
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{gradeLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Flag size={14} className="text-primary" />
+                    Nacionalidade
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{nationalityLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Building2 size={14} className="text-primary" />
+                    Cidade
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{cityLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Sparkles size={14} className="text-primary" />
+                    Interesse
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{interestLabel}</p>
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <LinkIcon size={14} className="text-primary" />
+                    Link social
+                  </p>
+                  {socialLinkHref ? (
+                    <a
+                      href={socialLinkHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                      aria-label="Abrir link social"
+                    >
+                      {socialNetworkKey === "instagram" ? (
+                        <Instagram size={12} />
+                      ) : socialNetworkKey === "facebook" ? (
+                        <Facebook size={12} />
+                      ) : socialNetworkKey === "linkedin" ? (
+                        <Linkedin size={12} />
+                      ) : socialNetworkKey === "tiktok" ? (
+                        <Music2 size={12} />
+                      ) : socialNetworkKey === "x" ? (
+                        <MessageCircle size={12} />
+                      ) : socialNetworkKey === "youtube" ? (
+                        <Youtube size={12} />
+                      ) : socialNetworkKey === "whatsapp" ? (
+                        <MessageCircle size={12} />
+                      ) : socialNetworkKey === "telegram" ? (
+                        <Send size={12} />
+                      ) : (
+                        <LinkIcon size={12} />
+                      )}
+                      {socialLinkCompact}
+                    </a>
+                  ) : (
+                    <p className="mt-1 text-sm font-medium text-foreground break-all">
+                      Não definido
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Globe size={14} className="text-primary" />
+                    Web URL
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground break-all">{webUrlLabel}</p>
+                </div>
+              </div>
+            </Card>
+
             <Card className="min-h-[400px]">
               <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <h3 className="font-bold">Minha Carreira</h3>
@@ -798,11 +1217,11 @@ export default function PerfilPage() {
       </div>
 
       <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
-        <DialogContent className="border-border/45 shadow-none sm:max-w-md">
+        <DialogContent className="border-border/45 shadow-none sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Editar perfil</DialogTitle>
             <DialogDescription>
-              Atualize o seu nome, biografia, localização e URL do avatar.
+              Atualize os dados do perfil pessoal e os contactos.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -838,6 +1257,128 @@ export default function PerfilPage() {
                   setProfileForm((f) => ({ ...f, location: e.target.value }))
                 }
                 autoComplete="address-level2"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-type">Tipo de perfil</Label>
+              <Input
+                id="profile-type"
+                value={profileForm.profile_type}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, profile_type: e.target.value }))
+                }
+                placeholder="pessoal"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-objective">Objetivo</Label>
+              <Input
+                id="profile-objective"
+                value={profileForm.objective}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, objective: e.target.value }))
+                }
+                placeholder="Descreva o objetivo"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-phone">Telefones (separados por vírgula)</Label>
+              <Input
+                id="profile-phone"
+                value={profileForm.phone}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, phone: e.target.value }))
+                }
+                placeholder="9999999, 999999"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-birth-date">Data de nascimento</Label>
+              <Input
+                id="profile-birth-date"
+                type="date"
+                value={profileForm.birth_date}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, birth_date: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-grade">Grau</Label>
+              <Input
+                id="profile-grade"
+                value={profileForm.grade}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, grade: e.target.value }))
+                }
+                placeholder="Ex.: Sénior"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-nationality">Nacionalidade</Label>
+              <Input
+                id="profile-nationality"
+                value={profileForm.nationality}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, nationality: e.target.value }))
+                }
+                placeholder="Angola"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-city">Cidade</Label>
+              <Input
+                id="profile-city"
+                value={profileForm.city}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, city: e.target.value }))
+                }
+                placeholder="Luanda"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-interest">Interesse</Label>
+              <Input
+                id="profile-interest"
+                value={profileForm.interest}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, interest: e.target.value }))
+                }
+                placeholder="Área de interesse"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-social-link">Link social</Label>
+              <Input
+                id="profile-social-link"
+                value={profileForm.social_link}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, social_link: e.target.value }))
+                }
+                placeholder="https://..."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-web-url">Web URLs (separados por vírgula)</Label>
+              <Input
+                id="profile-web-url"
+                value={profileForm.web_url}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, web_url: e.target.value }))
+                }
+                placeholder="site1.com, site2.com"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-cover-image">Imagem de capa (URL)</Label>
+              <Input
+                id="profile-cover-image"
+                type="url"
+                value={profileForm.cove_image}
+                onChange={(e) =>
+                  setProfileForm((f) => ({ ...f, cove_image: e.target.value }))
+                }
+                placeholder="https://..."
               />
             </div>
             <div className="grid gap-2">

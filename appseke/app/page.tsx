@@ -10,7 +10,7 @@ import { Users, Briefcase } from 'lucide-react';
 import SolicitacaoCliente from '@/components/itempostclients/itempostclient';
 import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
-import { fetchGlobalFeed } from '@/lib/feed-client';
+import { fetchExploreFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
 import type {
   FollowUserResponse,
@@ -112,7 +112,7 @@ function HomeInner() {
 
     async function run() {
       const token = getSessionToken();
-      const result = await fetchGlobalFeed({
+      const result = await fetchExploreFeed({
         page: feedPage,
         limit: 50,
         token,

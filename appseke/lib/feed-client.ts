@@ -5,6 +5,7 @@ import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
 const FEED_GLOBAL_API = "/api/posts/posts"
 const FEED_MAIN_API = "/api/feed"
+const FEED_EXPLORE_API = "/api/feed/explore"
 
 function parseNumberField(v: unknown): number | null {
   if (typeof v === "number" && !Number.isNaN(v)) return v
@@ -454,4 +455,13 @@ export async function fetchMainFeed(
   options: FetchGlobalFeedOptions = {}
 ): Promise<FetchGlobalFeedOutcome> {
   return fetchFeedFromUrl(FEED_MAIN_API, options, true)
+}
+
+/**
+ * GET /api/feed/explore — feed público para visitantes (token opcional no proxy).
+ */
+export async function fetchExploreFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchFeedFromUrl(FEED_EXPLORE_API, options, false)
 }
