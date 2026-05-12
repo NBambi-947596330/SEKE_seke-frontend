@@ -268,7 +268,7 @@ function HomeInner() {
           <div className="bg-white p-6 rounded-md border border-gray-200">
             <div className="flex items-center gap-3 mb-4">
               <div>
-                <h3 className="font-semibold">Preciso de um Profissional</h3>
+                <h3 className="text-base font-semibold">Preciso de um Profissional</h3>
                 <p className="text-sm text-gray-500">Encontra especialista agora</p>
               </div>
             </div>
@@ -294,14 +294,14 @@ function HomeInner() {
 
             <div className="mt-2">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="font-semibold text-gray-900">Filtro</h2>
+                <h2 className="text-base font-semibold text-gray-900">Filtro</h2>
               </div>
 
               <div className="flex gap-2">
                 <button
                   onClick={() => setFiltroLocal('todos')}
                   className={`flex-1 py-2  rounded-md text-sm font-medium cursor-pointer transition-colors ${filtro === 'todos'
-                    ? 'bg-[#18B481] text-white'
+                    ? 'bg-[#2b81e5] text-white'
                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
                 >
@@ -310,7 +310,7 @@ function HomeInner() {
                 <button
                   onClick={() => setFiltroLocal('solicitacoes')}
                   className={`flex-1 flex items-center justify-center cursor-pointer space-x-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${filtro === 'solicitacoes'
-                    ? 'bg-[#18B481] text-white'
+                    ? 'bg-[#2b81e5] text-white'
                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
                 >
@@ -320,7 +320,7 @@ function HomeInner() {
                 <button
                   onClick={() => setFiltroLocal('profissionais')}
                   className={`flex-1 flex items-center justify-center cursor-pointer space-x-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${filtro === 'profissionais'
-                    ? 'bg-[#18B481] text-white'
+                    ? 'bg-[#2b81e5] text-white'
                     : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
                 >
@@ -398,7 +398,7 @@ function HomeInner() {
         >
           <div className="bg-white rounded-md border border-gray-200">
             <div className="p-4 border-b border-gray-200">
-              <h3 className="font-semibold">Profissionais recomendados</h3>
+              <h3 className="text-base font-semibold">Profissionais recomendados</h3>
             </div>
             <div className="p-4 space-y-4">
               {sidebarProfRows.length === 0 ? (
@@ -411,13 +411,13 @@ function HomeInner() {
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-gray-200 rounded-full" />
                       <div>
-                        <p className="font-medium text-sm">{prof.nome}</p>
+                        <p className="font-medium text-xs">{prof.nome}</p>
                         <p className="text-xs text-gray-500">{prof.titulo}</p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      className="text-xs text-[#18B481] font-medium hover:text-[#18B481]/80 transition-colors cursor-pointer"
+                      className="text-xs text-[#2b81e5] font-medium hover:text-[#2b81e5]/80 transition-colors cursor-pointer"
                     >
                       Contactar
                     </button>
@@ -429,12 +429,12 @@ function HomeInner() {
 
           <div className="bg-white rounded-md border border-gray-200">
             <div className="p-4 border-b border-gray-200">
-              <h3 className="font-semibold">Solicitações recentes</h3>
+              <h3 className="text-base font-semibold">Solicitações recentes</h3>
             </div>
             <div className="p-4 space-y-3">
               {SOLICITACOES_MOCK.slice(0, 3).map((sol) => (
                 <div key={sol.id} className="text-sm">
-                  <p className="font-medium">{sol.nome}</p>
+                  <p className="font-medium text-xs">{sol.nome}</p>
                   <p className="text-xs text-gray-500">{sol.servico} • {sol.bairro}</p>
                   <span className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${sol.prioridade === 'alta' ? 'bg-red-50 text-red-600' :
                     sol.prioridade === 'media' ? 'bg-amber-50 text-amber-600' :

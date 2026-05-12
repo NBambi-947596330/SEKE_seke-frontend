@@ -329,7 +329,7 @@ export default function ItemPostProfissonal({
           <div className="space-y-0.5 min-w-0">
             <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <Link href={profileHref} className="min-w-0">
-                <h3 className="font-semibold text-sm hover:underline cursor-pointer truncate">
+                <h3 className="text-xs font-semibold hover:underline cursor-pointer truncate">
                   {nome}
                 </h3>
               </Link>

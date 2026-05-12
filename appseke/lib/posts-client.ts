@@ -5,6 +5,8 @@ import type {
   CreatePostRequest,
   CreatePostResponse,
   DeletePostResponse,
+  MyPostSummary,
+  MyPostsPagination,
   PostDetail,
   UpdatePostRequest,
 } from "@/types/post"
@@ -21,6 +23,7 @@ const EXTERNAL_API_BASE_URL = (
 ).replace(/\/+$/, "")
 
 const CREATE_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/createpost`
+const ALL_MY_POSTS_API = `${EXTERNAL_API_BASE_URL}/posts/allmyposts`
 const PUBLISH_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/setpublished`
 const UPLOAD_MEDIA_API = new URL(
   "/apiextern/upload",
@@ -566,6 +569,120 @@ function parsePostDetail(
   }
 
   return detail
+}
+
+function pickOptionalNumericId(
+  v: unknown
+): number | string | null | undefined {
+  if (v === null) return null
+  if (v === undefined) return undefined
+  if (typeof v === "number" && !Number.isNaN(v)) return v
+  if (typeof v === "string") return v
+  return undefined
+}
+
+function parseMyPostSummary(raw: unknown): MyPostSummary | null {
+  if (!raw || typeof raw !== "object") return null
+  const o = raw as Record<string, unknown>
+  if (o.id == null) return null
+
+  const midia = Array.isArray(o.midia)
+    ? o.midia.filter((x): x is string => typeof x === "string")
+    : undefined
+
+  const created_at = pickCreatedAt(o)
+
+  let published_at: string | null | undefined
+  if (o.published_at === null) published_at = null
+  else if (typeof o.published_at === "string") published_at = o.published_at
+
+  return {
+    id: o.id as number | string,
+    author_id: pickOptionalNumericId(o.author_id),
+    author_name: typeof o.author_name === "string" ? o.author_name : null,
+    title: typeof o.title === "string" ? o.title : null,
+    content: typeof o.content === "string" ? o.content : "",
+    slug: typeof o.slug === "string" ? o.slug : null,
+    midia,
+    status: typeof o.status === "string" ? o.status : undefined,
+    views_count: typeof o.views_count === "number" ? o.views_count : undefined,
+    published_at,
+    created_at,
+    updated_at: typeof o.updated_at === "string" ? o.updated_at : null,
+    user_id: pickOptionalNumericId(o.user_id),
+  }
+}
+
+function parseMyPostsPagination(raw: unknown): MyPostsPagination | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const p = raw as Record<string, unknown>
+  const total = typeof p.total === "number" ? p.total : undefined
+  const page = typeof p.page === "number" ? p.page : undefined
+  const totalPages = typeof p.totalPages === "number" ? p.totalPages : undefined
+  if (
+    total === undefined ||
+    page === undefined ||
+    totalPages === undefined
+  ) {
+    return undefined
+  }
+  return { total, page, totalPages }
+}
+
+export type FetchAllMyPostsOutcome =
+  | {
+      success: true
+      data: MyPostSummary[]
+      pagination?: MyPostsPagination
+    }
+  | { success: false; error: string; statusCode?: number }
+
+/**
+ * GET …/posts/allmyposts na API externa — lista as publicações do utilizador autenticado.
+ */
+export async function fetchAllMyPosts(
+  token: string
+): Promise<FetchAllMyPostsOutcome> {
+  const res = await fetch(ALL_MY_POSTS_API, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  })
+
+  const raw = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    const data = raw as ApiErrorResponse
+    return {
+      success: false,
+      error:
+        typeof data.message === "string" && data.message.trim()
+          ? data.message
+          : "Não foi possível carregar as suas publicações.",
+      statusCode: res.status,
+    }
+  }
+
+  const root = raw as Record<string, unknown>
+  const arr = root.data
+  const items: MyPostSummary[] = []
+  if (Array.isArray(arr)) {
+    for (const row of arr) {
+      const parsed = parseMyPostSummary(row)
+      if (parsed) items.push(parsed)
+    }
+  }
+
+  const pagination = parseMyPostsPagination(root.pagination)
+
+  return {
+    success: true,
+    data: items,
+    ...(pagination ? { pagination } : {}),
+  }
 }
 
 /**

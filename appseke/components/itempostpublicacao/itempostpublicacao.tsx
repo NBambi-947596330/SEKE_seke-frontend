@@ -157,7 +157,7 @@ export function ItemPostPublicacaoContent({
           <div className="space-y-0.5 min-w-0">
             <Link
               href={`/detalhesuser?userId=${encodeURIComponent(post.user.id)}`}
-              className="font-semibold text-sm hover:underline truncate block"
+              className="text-xs font-semibold hover:underline truncate block"
             >
               {post.user.name}
             </Link>
