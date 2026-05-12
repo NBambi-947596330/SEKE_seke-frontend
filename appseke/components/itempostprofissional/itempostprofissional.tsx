@@ -207,10 +207,15 @@ export default function ItemPostProfissonal({
   const [liking, setLiking] = useState(false)
   const [following, setFollowing] = useState(followingAuthor)
   const [followingLoading, setFollowingLoading] = useState(false)
+  const [likedVisual, setLikedVisual] = useState(likedByMe)
 
   useEffect(() => {
     setFollowing(followingAuthor)
   }, [followingAuthor])
+
+  useEffect(() => {
+    setLikedVisual(likedByMe)
+  }, [likedByMe])
 
   const isOwnPost =
     !!postId &&
@@ -281,14 +286,17 @@ export default function ItemPostProfissonal({
       toast.error("Inicie sessão para gostar desta publicação.")
       return
     }
+    const wasLiked = likedVisual
+    setLikedVisual(!wasLiked)
     setLiking(true)
-    const result = likedByMe
-      ? await unlikePost(postId, token)
-      : await likePost(postId, token)
+    const result = wasLiked
+      ? await unlikePost(postId, token, { previousLikeCount: curtidas })
+      : await likePost(postId, token, { previousLikeCount: curtidas })
     setLiking(false)
     if (result.success) {
       onLikeResult?.(result.data)
     } else {
+      setLikedVisual(wasLiked)
       toast.error(result.error)
     }
   }
@@ -463,7 +471,7 @@ export default function ItemPostProfissonal({
         <div
           className={cn(
             "flex items-center gap-2 group rounded-md p-1 -m-1 transition-colors",
-            likedByMe && "text-red-500"
+            likedVisual && "text-red-500"
           )}
         >
           <button
@@ -472,22 +480,25 @@ export default function ItemPostProfissonal({
             disabled={liking || !postId}
             className={cn(
               "flex shrink-0 disabled:opacity-60",
-              likedByMe ? "text-red-500" : "text-muted-foreground"
+              likedVisual ? "text-red-500" : "text-muted-foreground"
             )}
-            title={likedByMe ? "Gostou" : "Gostar"}
-            aria-label={likedByMe ? "Retirar gosto" : "Gostar"}
+            title={likedVisual ? "Gostou" : "Gostar"}
+            aria-label={likedVisual ? "Retirar gosto" : "Gostar"}
           >
             <div
               className={cn(
                 "w-8 h-8 rounded-full flex items-center justify-center transition-colors",
-                likedByMe
+                likedVisual
                   ? "bg-red-50"
                   : "bg-muted group-hover:bg-red-50"
               )}
             >
               {liking ? (
                 <Loader2
-                  className="size-4 animate-spin text-muted-foreground"
+                  className={cn(
+                    "size-4 animate-spin shrink-0",
+                    likedVisual ? "text-red-500" : "text-muted-foreground"
+                  )}
                   aria-hidden
                 />
               ) : (
@@ -495,7 +506,7 @@ export default function ItemPostProfissonal({
                   size={16}
                   className={cn(
                     "transition-colors",
-                    likedByMe
+                    likedVisual
                       ? "fill-red-500 text-red-500"
                       : "text-muted-foreground group-hover:text-red-500"
                   )}
@@ -511,7 +522,7 @@ export default function ItemPostProfissonal({
               token={token}
               triggerClassName={cn(
                 "text-xs tabular-nums",
-                likedByMe
+                likedVisual
                   ? "text-red-500 font-medium"
                   : "text-muted-foreground group-hover:text-foreground"
               )}
@@ -522,7 +533,7 @@ export default function ItemPostProfissonal({
             <span
               className={cn(
                 "text-xs tabular-nums",
-                likedByMe
+                likedVisual
                   ? "text-red-500 font-medium"
                   : "text-muted-foreground"
               )}

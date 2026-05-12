@@ -89,9 +89,16 @@ export function ItemPostPublicacaoContent({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [liking, setLiking] = useState(false)
+  const [likedVisual, setLikedVisual] = useState(
+    () => post.liked_by_me === true
+  )
 
   const token = resolveAuthToken(accessToken)
   const isOwnPost = !!token && sameUserId(viewerId, post.user.id)
+
+  useEffect(() => {
+    setLikedVisual(post.liked_by_me === true)
+  }, [post.liked_by_me, post.id])
 
   const requestDelete = () => setDeleteDialogOpen(true)
 
@@ -120,14 +127,18 @@ export function ItemPostPublicacaoContent({
       toast.error("Inicie sessão para gostar desta publicação.")
       return
     }
+    const wasLiked = likedVisual
+    setLikedVisual(!wasLiked)
     setLiking(true)
-    const result = liked
-      ? await unlikePost(post.id, token)
-      : await likePost(post.id, token)
+    const likeCount = post.stats?.likes ?? 0
+    const result = wasLiked
+      ? await unlikePost(post.id, token, { previousLikeCount: likeCount })
+      : await likePost(post.id, token, { previousLikeCount: likeCount })
     setLiking(false)
     if (result.success) {
       onLikeResult?.(result.data)
     } else {
+      setLikedVisual(wasLiked)
       toast.error(result.error)
     }
   }
@@ -138,7 +149,6 @@ export function ItemPostPublicacaoContent({
   const imageSrc = mediaType === "image" ? mediaUrl : ""
   const imageAlt =
     post.content.trim().slice(0, 100) || "Imagem da publicação"
-  const liked = post.liked_by_me === true
 
   return (
     <Card className={cn("overflow-hidden border-border/80", className)}>
@@ -237,7 +247,7 @@ export function ItemPostPublicacaoContent({
           <div
             className={cn(
               "flex items-center gap-2 text-muted-foreground rounded-md p-1 -m-1",
-              liked && "text-red-500"
+              likedVisual && "text-red-500"
             )}
           >
             <button
@@ -246,19 +256,27 @@ export function ItemPostPublicacaoContent({
               disabled={liking}
               className={cn(
                 "flex items-center justify-center rounded-md transition-colors hover:text-foreground disabled:opacity-60",
-                liked ? "text-red-500" : "text-muted-foreground"
+                likedVisual ? "text-red-500" : "text-muted-foreground"
               )}
-              title={liked ? "Gostou" : "Gostar"}
-              aria-label={liked ? "Retirar gosto" : "Gostar"}
+              title={likedVisual ? "Gostou" : "Gostar"}
+              aria-label={likedVisual ? "Retirar gosto" : "Gostar"}
             >
               {liking ? (
-                <Loader2 className="size-[18px] shrink-0 animate-spin" aria-hidden />
+                <Loader2
+                  className={cn(
+                    "size-[18px] shrink-0 animate-spin",
+                    likedVisual ? "text-red-500" : "text-muted-foreground"
+                  )}
+                  aria-hidden
+                />
               ) : (
                 <Heart
                   size={18}
                   className={cn(
-                    "shrink-0",
-                    liked && "fill-red-500 text-red-500"
+                    "shrink-0 transition-colors",
+                    likedVisual
+                      ? "fill-red-500 text-red-500"
+                      : "text-muted-foreground hover:text-red-500"
                   )}
                 />
               )}
@@ -270,7 +288,7 @@ export function ItemPostPublicacaoContent({
               token={token}
               triggerClassName={cn(
                 "text-sm tabular-nums",
-                liked && "text-red-500 font-medium"
+                likedVisual && "text-red-500 font-medium"
               )}
             >
               {post.stats.likes}
