@@ -5,13 +5,14 @@ import type {
   RegisterResponse,
   ApiErrorResponse,
 } from "@/types/auth"
+import { extractUserIdFromJwt } from "@/lib/jwt-user-id"
 
 const EXTERNAL_API_BASE = process.env.NEXT_PUBLIC_URL_API?.trim()
 const LOGIN_API = EXTERNAL_API_BASE
-  ? `${EXTERNAL_API_BASE}/auth/user/login`
+  ? `${EXTERNAL_API_BASE}/auth/login`
   : "/api/auth/credentials/login"
 const REGISTER_API = EXTERNAL_API_BASE
-  ? `${EXTERNAL_API_BASE}/auth/user/register`
+  ? `${EXTERNAL_API_BASE}/auth/register`
   : "/api/auth/credentials/register"
 
 export class AuthError extends Error {
@@ -77,7 +78,14 @@ function normalizeLoginResponse(raw: unknown): LoginResponse {
 
   const userId =
     readString(nestedUser, "id") ??
-    (typeof nestedUser?.id === "number" ? String(nestedUser.id) : undefined)
+    readString(nestedUser, "user_id") ??
+    (typeof nestedUser?.id === "number" ? String(nestedUser.id) : undefined) ??
+    (typeof nestedUser?.user_id === "number" ? String(nestedUser.user_id) : undefined) ??
+    readString(data, "id") ??
+    readString(data, "user_id") ??
+    readString(root, "id") ??
+    readString(root, "user_id") ??
+    (token ? extractUserIdFromJwt(token) : undefined)
 
   return {
     token,
@@ -87,7 +95,8 @@ function normalizeLoginResponse(raw: unknown): LoginResponse {
       ? {
           id: userId ?? "",
           email: readString(nestedUser, "email"),
-          name: readString(nestedUser, "name"),
+          name:
+            readString(nestedUser, "name") ?? readString(nestedUser, "full_name"),
           username: readString(nestedUser, "username"),
           image: readString(nestedUser, "image") ?? readString(nestedUser, "avatar"),
         }
@@ -135,6 +144,51 @@ export type RegisterOutcome =
   | { success: true; data: RegisterResponse }
   | { success: false; error: string; statusCode?: number }
 
+export function normalizeRegisterResponse(raw: unknown): RegisterResponse {
+  const root = toRecord(raw)
+  const data = toRecord(root?.data)
+  const nestedUser =
+    toRecord(root?.user) ??
+    toRecord(data?.user) ??
+    toRecord(root?.perfil) ??
+    toRecord(data?.perfil)
+
+  const token =
+    readString(root, "token") ??
+    readString(root, "accessToken") ??
+    readString(root, "access_token") ??
+    readString(data, "token") ??
+    readString(data, "accessToken") ??
+    readString(data, "access_token")
+
+  const userId =
+    readString(nestedUser, "id") ??
+    readString(nestedUser, "user_id") ??
+    (typeof nestedUser?.id === "number" ? String(nestedUser.id) : undefined) ??
+    (typeof nestedUser?.user_id === "number" ? String(nestedUser.user_id) : undefined) ??
+    readString(data, "id") ??
+    readString(data, "user_id") ??
+    readString(root, "id") ??
+    readString(root, "user_id") ??
+    (token ? extractUserIdFromJwt(token) : undefined)
+
+  return {
+    message: readString(root, "message") ?? readString(data, "message"),
+    token,
+    accessToken: readString(root, "accessToken") ?? readString(data, "accessToken") ?? token,
+    user: nestedUser
+      ? {
+          id: userId ?? "",
+          name:
+            readString(nestedUser, "name") ?? readString(nestedUser, "full_name"),
+          email: readString(nestedUser, "email"),
+        }
+      : userId
+        ? { id: userId }
+        : undefined,
+  }
+}
+
 /**
  * Registo de nova conta (usa API route que chama NEXT_PUBLIC_URL_API/auth/register).
  */
@@ -147,12 +201,12 @@ export async function registerWithCredentials(
     body: JSON.stringify(payload),
   })
 
-  const data = (await res.json().catch(() => ({}))) as RegisterResponse | ApiErrorResponse
+  const rawData = (await res.json().catch(() => ({}))) as RegisterResponse | ApiErrorResponse
 
   if (!res.ok) {
     const message =
-      "message" in data && typeof data.message === "string"
-        ? data.message
+      "message" in rawData && typeof rawData.message === "string"
+        ? rawData.message
         : "Não foi possível criar a conta. Tente novamente."
     return {
       success: false,
@@ -163,6 +217,6 @@ export async function registerWithCredentials(
 
   return {
     success: true,
-    data: data as RegisterResponse,
+    data: normalizeRegisterResponse(rawData),
   }
 }

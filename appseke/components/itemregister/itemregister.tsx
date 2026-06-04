@@ -15,9 +15,17 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useToast } from "@/components/ui/toaster"
+import { savePendingRegister } from "@/lib/register-pending"
 import { lightTheme } from "@/style/light"
-import { registerWithCredentials } from "@/lib/auth-client"
+import type { RegisterRole } from "@/types/auth"
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -33,25 +41,31 @@ function GoogleIcon({ className }: { className?: string }) {
 export function ItemRegister() {
   const router = useRouter()
   const toast = useToast()
-  const [name, setName] = useState("")
+  const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [role, setRole] = useState<RegisterRole | "">("")
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
+    (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
 
-      const trimmedName = name.trim()
+      const trimmedFullName = fullName.trim()
       const trimmedEmail = email.trim()
+      const trimmedPhone = phone.trim()
 
-      if (!trimmedName) {
-        toast.error("Digite o seu nome.")
+      if (!trimmedFullName) {
+        toast.error("Digite o seu nome completo.")
         return
       }
       if (!trimmedEmail) {
         toast.error("Digite o e-mail.")
+        return
+      }
+      if (!trimmedPhone) {
+        toast.error("Digite o telefone.")
         return
       }
       if (!password) {
@@ -62,29 +76,21 @@ export function ItemRegister() {
         toast.error("A confirmação de senha não coincide.")
         return
       }
-
-      setIsLoading(true)
-      try {
-        const result = await registerWithCredentials({
-          name: trimmedName,
-          email: trimmedEmail,
-          password,
-        })
-
-        if (result.success) {
-          toast.success("Conta criada com sucesso. Faça login para continuar.")
-          router.push("/auth/login")
-          return
-        }
-
-        toast.error(result.error)
-      } catch {
-        toast.error("Erro de conexão. Verifique sua internet e tente novamente.")
-      } finally {
-        setIsLoading(false)
+      if (role !== "client" && role !== "professional") {
+        toast.error("Selecione se é cliente ou profissional.")
+        return
       }
+
+      savePendingRegister({
+        full_name: trimmedFullName,
+        email: trimmedEmail,
+        phone: trimmedPhone,
+        password,
+        role,
+      })
+      router.push("/auth/register/tipo-conta")
     },
-    [name, email, password, confirmPassword, router, toast]
+    [fullName, email, phone, password, confirmPassword, role, router, toast]
   )
 
   const handleGoogleSignUp = useCallback(() => {
@@ -111,15 +117,14 @@ export function ItemRegister() {
                 <form onSubmit={handleSubmit}>
                     <div className="flex flex-col gap-6">
                         <div className="grid gap-2">
-                            <Label htmlFor="name">Nome</Label>
+                            <Label htmlFor="fullName">Nome completo</Label>
                             <Input
-                                id="name"
+                                id="fullName"
                                 type="text"
-                                placeholder="Ex: Mteus"
+                                placeholder="Ex: Teste Silva"
                                 autoComplete="name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                disabled={isLoading}
+                                value={fullName}
+                                onChange={(e) => setFullName(e.target.value)}
                                 style={{ border: `1px solid ${lightTheme.colors.border}` }}
                                 required
                             />
@@ -133,7 +138,38 @@ export function ItemRegister() {
                                 autoComplete="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                disabled={isLoading}
+                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
+                                required
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="role">Tipo de conta</Label>
+                            <Select
+                                value={role || undefined}
+                                onValueChange={(value) => setRole(value as RegisterRole)}
+                            >
+                                <SelectTrigger
+                                    id="role"
+                                    className="w-full"
+                                    style={{ border: `1px solid ${lightTheme.colors.border}` }}
+                                >
+                                    <SelectValue placeholder="Selecione o tipo de conta" />
+                                </SelectTrigger>
+                                <SelectContent className="w-full">
+                                    <SelectItem value="client">Cliente</SelectItem>
+                                    <SelectItem value="professional">Profissional</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="phone">Telefone</Label>
+                            <Input
+                                id="phone"
+                                type="tel"
+                                placeholder="Ex: +244923456789"
+                                autoComplete="tel"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
                                 style={{ border: `1px solid ${lightTheme.colors.border}` }}
                                 required
                             />
@@ -147,7 +183,6 @@ export function ItemRegister() {
                                 autoComplete="new-password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                disabled={isLoading}
                                 style={{ border: `1px solid ${lightTheme.colors.border}` }}
                                 required
                             />
@@ -161,7 +196,6 @@ export function ItemRegister() {
                                 autoComplete="new-password"
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                disabled={isLoading}
                                 style={{ border: `1px solid ${lightTheme.colors.border}` }}
                                 required
                             />
@@ -172,9 +206,8 @@ export function ItemRegister() {
                             type="submit"
                             className="w-full cursor-pointer text-white h-10"
                             style={{ backgroundColor: lightTheme.colors.primary }}
-                            disabled={isLoading}
                         >
-                            {isLoading ? "A criar conta…" : "Criar conta"}
+                            Continuar
                         </Button>
                     </CardFooter>
                 </form>

@@ -367,6 +367,33 @@ export interface FetchGlobalFeedOptions {
   token?: string | null
 }
 
+/** Evita mostrar erros técnicos do backend (ex.: `undefined.user_id`) na UI. */
+function toUserFacingFeedError(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return "Não foi possível carregar o feed."
+
+  if (
+    /cannot read properties of undefined/i.test(trimmed) &&
+    /user_id/i.test(trimmed)
+  ) {
+    return "Não foi possível carregar o feed. Tente novamente em instantes."
+  }
+
+  if (/cannot read properties of/i.test(trimmed)) {
+    return "Não foi possível carregar o feed."
+  }
+
+  return trimmed
+}
+
+function shouldTryFeedFallback(outcome: FetchGlobalFeedOutcome): boolean {
+  if (outcome.success) return false
+  const status = outcome.statusCode
+  if (status != null && status >= 500) return true
+  const msg = outcome.error.toLowerCase()
+  return msg.includes("user_id") || msg.includes("cannot read properties")
+}
+
 async function fetchFeedFromUrl(
   urlBase: string,
   options: FetchGlobalFeedOptions = {},
@@ -403,10 +430,11 @@ async function fetchFeedFromUrl(
 
   if (!res.ok) {
     const data = raw as ApiErrorResponse
-    const message =
+    const message = toUserFacingFeedError(
       typeof data.message === "string"
         ? data.message
         : "Não foi possível carregar o feed."
+    )
     return {
       success: false,
       error: message,
@@ -464,4 +492,32 @@ export async function fetchExploreFeed(
   options: FetchGlobalFeedOptions = {}
 ): Promise<FetchGlobalFeedOutcome> {
   return fetchFeedFromUrl(FEED_EXPLORE_API, options, false)
+}
+
+/**
+ * Feed da home: com sessão usa `/api/feed`; sem sessão tenta explore e, se falhar,
+ * lista global de posts (`/api/posts/posts`).
+ */
+export async function fetchHomeFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  const token = options.token?.trim() ?? ""
+
+  if (token) {
+    const main = await fetchMainFeed(options)
+    if (main.success) return main
+    if (shouldTryFeedFallback(main)) {
+      const global = await fetchGlobalFeed(options)
+      if (global.success) return global
+    }
+    return main
+  }
+
+  const explore = await fetchExploreFeed(options)
+  if (explore.success) return explore
+  if (shouldTryFeedFallback(explore)) {
+    const global = await fetchGlobalFeed(options)
+    if (global.success) return global
+  }
+  return explore
 }

@@ -10,7 +10,9 @@ const getBaseUrl = (): string => {
 }
 
 const getProfilesMePath = (): string =>
-  process.env.API_PROFILES_ME_PATH?.trim() || "/profiles/me"
+  process.env.API_PROFILES_ME_PATH?.trim() ||
+  process.env.API_PROFILE_PATH?.trim() ||
+  "/profile"
 
 const getAuthorizationHeader = (
   request: NextRequest

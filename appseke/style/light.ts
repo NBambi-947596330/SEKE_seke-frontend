@@ -11,7 +11,7 @@ export const lightTheme: Theme = {
     text: "#1c1e21",
     textSecondary: "#5d6c7b",
     border: "#ced0d4",
-    success: "#31a24c",
+    success: "#0064e0",
     error: "#e41e3f",
     warning: "#f7b928",
   },

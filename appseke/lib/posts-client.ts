@@ -19,7 +19,7 @@ const POSTS_API = "/api/posts"
  * O upload vive em `/apiextern/...` na raiz do host, não sob `/api`.
  */
 const EXTERNAL_API_BASE_URL = (
-  process.env.NEXT_PUBLIC_URL_API?.trim() || "https://api-cmtf.onrender.com/api"
+  process.env.NEXT_PUBLIC_URL_API?.trim() || "https://api-seke-v1.onrender.com/api"
 ).replace(/\/+$/, "")
 
 const CREATE_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/createpost`

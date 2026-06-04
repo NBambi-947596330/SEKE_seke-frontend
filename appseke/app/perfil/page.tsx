@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/toaster"
+import { extractUserIdFromJwt } from "@/lib/jwt-user-id"
 import { getStoredUserId } from "@/lib/viewer-user-id"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { compressImageToJpegDataUrl } from "@/lib/compress-image-client"
@@ -54,9 +55,27 @@ import {
   NetworkListSkeleton,
   ProfileLayoutSkeleton,
 } from "@/components/profile/profile-layout-skeleton"
-import { fetchAllMyPosts } from "@/lib/posts-client"
+import { fetchAllMyPosts, uploadMediaToCloudinary } from "@/lib/posts-client"
+import {
+  buildUpdateProfilePayload,
+  fetchProfile,
+  resolveProfileUserId,
+  updateProfile,
+  updateProfileAvatar,
+  updateProfileLocation,
+} from "@/lib/profile-client"
+import { extractUserId } from "@/lib/profile-user-id"
+import {
+  extractProfileUserId,
+  mapProfileApiToPerfilInfo,
+  mapProfileApiToPerfilUser,
+  unwrapProfilePayload,
+} from "@/lib/profile-map"
 import type { MyPostSummary, MyPostsPagination } from "@/types/post"
 import { DraftFinalizeModal } from "@/components/draft-finalize-modal/draft-finalize-modal"
+import { ProvinceSelect } from "@/components/province-select/province-select"
+import { ServiceRegisterModal } from "@/components/itemprofileservice/itemprofileservice"
+import { isProfessionalUser } from "@/lib/is-professional-user"
 
 interface PerfilUser {
   id?: number | string
@@ -71,16 +90,20 @@ interface PerfilInfo {
   profile_type?: string
   bio?: string
   objective?: string | null
-  phone?: string[]
+  phone?: string[] | string
   birth_date?: string | null
   grade?: string | null
   nationality?: string | null
   city?: string | null
+  province?: string | null
+  municipality?: string | null
   interest?: string | null
   social_link?: string | null
   web_url?: string[]
   cove_image?: string | null
   location?: string
+  latitude?: number | null
+  longitude?: number | null
   member_since?: string
 }
 
@@ -126,8 +149,16 @@ function pickPerfilInfoFromUnknown(raw: unknown): Partial<PerfilInfo> | null {
   if (typeof o.objective === "string" || o.objective == null) {
     picked.objective = (o.objective as string | null) ?? null
   }
-  if (Array.isArray(o.phone)) {
+  if (typeof o.phone === "string") {
+    picked.phone = o.phone
+  } else if (Array.isArray(o.phone)) {
     picked.phone = o.phone.filter((x): x is string => typeof x === "string")
+  }
+  if (typeof o.province === "string" || o.province == null) {
+    picked.province = (o.province as string | null) ?? null
+  }
+  if (typeof o.municipality === "string" || o.municipality == null) {
+    picked.municipality = (o.municipality as string | null) ?? null
   }
   if (typeof o.birth_date === "string" || o.birth_date == null) {
     picked.birth_date = (o.birth_date as string | null) ?? null
@@ -154,9 +185,26 @@ function pickPerfilInfoFromUnknown(raw: unknown): Partial<PerfilInfo> | null {
     picked.cove_image = (o.cove_image as string | null) ?? null
   }
   if (typeof o.location === "string") picked.location = o.location
+  if (typeof o.latitude === "number") picked.latitude = o.latitude
+  if (typeof o.longitude === "number") picked.longitude = o.longitude
   if (typeof o.member_since === "string") picked.member_since = o.member_since
+  if (typeof o.created_at === "string") picked.member_since = o.created_at
+  if (Array.isArray(o.roles)) {
+    const roles = o.roles.filter((r): r is string => typeof r === "string")
+    if (roles.length > 0 && !picked.profile_type) {
+      picked.profile_type = roles[0]
+    }
+  }
+  if (picked.province && !picked.location) picked.location = picked.province
+  if (picked.municipality && !picked.city) picked.city = picked.municipality
 
   return Object.keys(picked).length > 0 ? picked : null
+}
+
+function normalizePhoneForForm(phone: PerfilInfo["phone"]): string {
+  if (typeof phone === "string") return phone
+  if (Array.isArray(phone)) return phone.join(", ")
+  return ""
 }
 
 function parseCommaSeparatedList(raw: string): string[] {
@@ -219,15 +267,60 @@ function pickUserFromUnknown(raw: unknown): Record<string, unknown> | null {
     return o.user as Record<string, unknown>
   }
   if (o.data && typeof o.data === "object") {
-    return o.data as Record<string, unknown>
+    const data = o.data as Record<string, unknown>
+    if (data.user && typeof data.user === "object") {
+      return data.user as Record<string, unknown>
+    }
+    return data
   }
-  if (o.id != null || o.name != null || o.email != null || o.avatar != null) {
+  if (
+    o.id != null ||
+    o.user_id != null ||
+    o.name != null ||
+    o.full_name != null ||
+    o.email != null ||
+    o.avatar != null
+  ) {
     return o
   }
   return null
 }
 
+function mapPickedUserToPerfilUser(
+  picked: Record<string, unknown>
+): PerfilUser {
+  const id = picked.id ?? picked.user_id
+  const name =
+    typeof picked.name === "string"
+      ? picked.name
+      : typeof picked.full_name === "string"
+        ? picked.full_name
+        : undefined
+  return {
+    id:
+      typeof id === "number" || typeof id === "string" ? id : undefined,
+    name,
+    email: typeof picked.email === "string" ? picked.email : undefined,
+    username: typeof picked.username === "string" ? picked.username : undefined,
+    avatar:
+      typeof picked.profile_photo_url === "string" && picked.profile_photo_url.trim()
+        ? picked.profile_photo_url.trim()
+        : typeof picked.avatar === "string"
+          ? picked.avatar
+          : typeof picked.image === "string"
+            ? picked.image
+            : undefined,
+    image:
+      typeof picked.image === "string"
+        ? picked.image
+        : typeof picked.profile_photo_url === "string"
+          ? picked.profile_photo_url
+          : undefined,
+  }
+}
+
 function syncUserDataInSession(partial: {
+  id?: string | number
   name?: string
   avatar?: string
   image?: string
@@ -240,14 +333,23 @@ function syncUserDataInSession(partial: {
       (partial.avatar?.trim() || partial.image?.trim() || prev.image) as
         | string
         | undefined
+    const id =
+      partial.id != null && String(partial.id).trim() !== ""
+        ? String(partial.id).trim()
+        : typeof prev.id === "string" || typeof prev.id === "number"
+          ? String(prev.id)
+          : typeof prev.user_id === "string" || typeof prev.user_id === "number"
+            ? String(prev.user_id)
+            : undefined
     window.sessionStorage.setItem(
       "user_data",
       JSON.stringify({
         ...prev,
+        ...(id ? { id, user_id: id } : {}),
         ...(partial.name != null && partial.name !== ""
           ? { name: partial.name }
           : {}),
-        ...(image != null && image !== "" ? { image } : {}),
+        ...(image != null && image !== "" ? { image, avatar: image } : {}),
       })
     )
   } catch {
@@ -275,7 +377,7 @@ function Card({
 const BADGE_STYLES: Record<string, string> = {
   blue: "bg-primary/10 text-primary border-primary/15",
   yellow: "bg-amber-50/80 text-amber-700 border-amber-100/60",
-  green: "bg-emerald-50/80 text-emerald-700 border-emerald-100/60",
+  violet: "bg-secondary/10 text-secondary border-secondary/15",
   sky: "bg-secondary/10 text-secondary border-secondary/15",
   slate: "bg-muted text-muted-foreground border-border/40",
 }
@@ -304,6 +406,21 @@ const CAREER_TABS = [
   "Projetos",
   "Certificados",
 ] as const
+
+function getCareerTabs(isProfessional: boolean): readonly string[] {
+  if (isProfessional) {
+    return [
+      "Seguidores",
+      "A seguir",
+      "Serviços",
+      "Experiência",
+      "Empresas",
+      "Projetos",
+      "Certificados",
+    ]
+  }
+  return CAREER_TABS
+}
 
 interface NetworkUserRow {
   id: string
@@ -468,30 +585,46 @@ export default function PerfilPage() {
   const [draftModalPost, setDraftModalPost] = useState<MyPostSummary | null>(
     null
   )
+  const [serviceModalOpen, setServiceModalOpen] = useState(false)
 
   const profileUserId = useMemo(() => {
-    if (perfilUser?.id != null) return String(perfilUser.id)
-    if (typeof window !== "undefined") return getStoredUserId()
+    if (perfilUser?.id != null) {
+      const id = String(perfilUser.id).trim()
+      if (id) return id
+    }
+    if (typeof window !== "undefined") {
+      const stored = getStoredUserId()
+      if (stored) return stored
+      const token = window.sessionStorage.getItem("auth_token")
+      if (token) {
+        const fromJwt = extractUserIdFromJwt(token)
+        if (fromJwt) return fromJwt
+      }
+    }
     return null
   }, [perfilUser?.id])
 
   const buildProfileFormState = useCallback((): ProfileFormState => {
+    const province =
+      perfilInfo?.province ?? perfilInfo?.location ?? ""
+    const municipality =
+      perfilInfo?.municipality ?? perfilInfo?.city ?? ""
     return {
       name: perfilUser?.name ?? user?.name ?? "",
       bio: perfilInfo?.bio ?? "",
       avatar: perfilUser?.avatar ?? user?.image ?? "",
       profile_type: perfilInfo?.profile_type ?? "pessoal",
       objective: perfilInfo?.objective ?? "",
-      phone: Array.isArray(perfilInfo?.phone) ? perfilInfo.phone.join(", ") : "",
+      phone: normalizePhoneForForm(perfilInfo?.phone),
       birth_date: perfilInfo?.birth_date ?? "",
       grade: perfilInfo?.grade ?? "",
       nationality: perfilInfo?.nationality ?? "",
-      city: perfilInfo?.city ?? "",
+      city: municipality,
       interest: perfilInfo?.interest ?? "",
       social_link: perfilInfo?.social_link ?? "",
       web_url: Array.isArray(perfilInfo?.web_url) ? perfilInfo.web_url.join(", ") : "",
       cove_image: perfilInfo?.cove_image ?? "",
-      location: perfilInfo?.location ?? "",
+      location: province,
     }
   }, [perfilUser, perfilInfo, user])
 
@@ -509,66 +642,34 @@ export default function PerfilPage() {
         return false
       }
 
+      const userId = await resolveProfileUserId(token, profileUserId)
+      if (!userId) {
+        toast.error(
+          "Não foi possível obter o ID do utilizador. Recarregue a página ou inicie sessão novamente."
+        )
+        return false
+      }
+      syncUserDataInSession({ id: userId })
+
       setSavingProfile(true)
       try {
-        const authUserPayload = {
-          name: formData.name.trim(),
-          avatar: formData.avatar.trim(),
-          status: "active",
-        }
-
-        const authUserRes = await fetch("/api/auth/user/profile", {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(authUserPayload),
+        const profilePayload = buildUpdateProfilePayload({
+          userId,
+          fullName: formData.name,
+          phone: formData.phone,
+          bio: formData.bio,
+          province: formData.location,
+          municipality: formData.city,
         })
 
-        const authUserData = (await authUserRes.json().catch(() => null)) as
-          | {
-              message?: string
-              user?: Record<string, unknown>
-              data?: Record<string, unknown>
-            }
-          | null
-
-        if (!authUserRes.ok) {
-          toast.error(
-            typeof authUserData?.message === "string"
-              ? authUserData.message
-              : "Não foi possível atualizar nome e avatar."
-          )
+        const profileUpdate = await updateProfile(token, profilePayload)
+        if (!profileUpdate.success) {
+          toast.error(profileUpdate.error)
           return false
         }
 
-        const payload = {
-          profile_type: formData.profile_type.trim() || "pessoal",
-          bio: formData.bio.trim(),
-          objective: formData.objective.trim() || null,
-          phone: parseCommaSeparatedList(formData.phone),
-          birth_date: formData.birth_date.trim() || null,
-          grade: formData.grade.trim() || null,
-          nationality: formData.nationality.trim() || null,
-          city: formData.city.trim() || null,
-          interest: formData.interest.trim() || null,
-          social_link: formData.social_link.trim() || null,
-          web_url: parseCommaSeparatedList(formData.web_url),
-          cove_image: formData.cove_image.trim() || null,
-          location: formData.location.trim(),
-        }
-
-        const res = await fetch("/api/profiles/me", {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        })
-
-        const data = (await res.json().catch(() => null)) as
+        const updatedProfile = unwrapProfilePayload(profileUpdate.data)
+        const authUserData = profileUpdate.data as
           | {
               message?: string
               user?: Record<string, unknown>
@@ -577,37 +678,85 @@ export default function PerfilPage() {
             }
           | null
 
-        if (!res.ok) {
-          toast.error(
-            typeof data?.message === "string"
-              ? data.message
-              : "Não foi possível guardar o perfil."
-          )
-          return false
+        const lat =
+          updatedProfile?.latitude ?? perfilInfo?.latitude
+        const lng =
+          updatedProfile?.longitude ?? perfilInfo?.longitude
+        if (typeof lat === "number" && typeof lng === "number") {
+          const locationUpdate = await updateProfileLocation(token, {
+            user_id: userId,
+            latitude: lat,
+            longitude: lng,
+            province: formData.location.trim(),
+            municipality: formData.city.trim(),
+          })
+          if (!locationUpdate.success) {
+            toast.error(locationUpdate.error)
+            return false
+          }
         }
 
-        const authUser = pickUserFromUnknown(authUserData)
-        if (authUser && typeof authUser === "object") {
+        const avatarUrl = formData.avatar.trim()
+        if (avatarUrl && !avatarUrl.startsWith("data:")) {
+          const avatarUpdate = await updateProfileAvatar(token, {
+            user_id: userId,
+            avatarUrl,
+          })
+          if (!avatarUpdate.success) {
+            toast.error(avatarUpdate.error)
+            return false
+          }
+        }
+
+        const data = authUserData
+
+        if (updatedProfile) {
+          const mapped = mapProfileApiToPerfilUser(updatedProfile)
           setPerfilUser((prev) => ({
             ...(prev ?? {}),
-            id:
-              authUser.id != null
-                ? typeof authUser.id === "number" || typeof authUser.id === "string"
-                  ? authUser.id
-                  : prev?.id
-                : prev?.id,
-            name: typeof authUser.name === "string" ? authUser.name : prev?.name,
-            email: typeof authUser.email === "string" ? authUser.email : prev?.email,
-            username:
-              typeof authUser.username === "string" ? authUser.username : prev?.username,
-            avatar:
-              typeof authUser.avatar === "string" ? authUser.avatar : prev?.avatar,
+            ...mapped,
+            id: mapped.id ?? prev?.id,
+            name: mapped.name ?? prev?.name,
+            email: mapped.email ?? prev?.email,
+            avatar: mapped.avatar ?? prev?.avatar,
           }))
-
+          setPerfilInfo((prev) => ({
+            ...(prev ?? {}),
+            ...(mapProfileApiToPerfilInfo(updatedProfile) as Partial<PerfilInfo>),
+          }))
           syncUserDataInSession({
-            name: typeof authUser.name === "string" ? authUser.name : undefined,
-            avatar: typeof authUser.avatar === "string" ? authUser.avatar : undefined,
+            id: mapped.id,
+            name: mapped.name,
+            avatar: mapped.avatar,
           })
+        } else {
+          const authUser = pickUserFromUnknown(authUserData)
+          if (authUser) {
+            const mapped = mapPickedUserToPerfilUser(authUser)
+            setPerfilUser((prev) => ({
+              ...(prev ?? {}),
+              ...mapped,
+              id: mapped.id ?? prev?.id,
+              name: mapped.name ?? prev?.name,
+              email: mapped.email ?? prev?.email,
+              username: mapped.username ?? prev?.username,
+              avatar: mapped.avatar ?? prev?.avatar,
+            }))
+
+            const authPerfil = pickPerfilInfoFromUnknown(authUserData)
+            if (authPerfil) {
+              setPerfilInfo((prev) => ({
+                ...(prev ?? {}),
+                ...authPerfil,
+              }))
+            }
+
+            syncUserDataInSession({
+              id: mapped.id,
+              name: mapped.name,
+              avatar: mapped.avatar,
+            })
+          }
         }
 
         const u = pickUserFromUnknown(data)
@@ -647,6 +796,14 @@ export default function PerfilPage() {
           }))
 
           syncUserDataInSession({
+            id:
+              u.id != null
+                ? typeof u.id === "number" || typeof u.id === "string"
+                  ? u.id
+                  : undefined
+                : typeof u.user_id === "number" || typeof u.user_id === "string"
+                  ? u.user_id
+                  : undefined,
             name: typeof u.name === "string" ? u.name : undefined,
             avatar: typeof u.avatar === "string" ? u.avatar : undefined,
           })
@@ -677,7 +834,7 @@ export default function PerfilPage() {
         setSavingProfile(false)
       }
     },
-    [router, toast]
+    [perfilInfo, profileUserId, router, toast]
   )
 
   const handleSaveProfile = useCallback(async () => {
@@ -801,20 +958,44 @@ export default function PerfilPage() {
       try {
         const dataUrl = await compressImageToJpegDataUrl(file)
         setAvatarPreviewSrc(dataUrl)
-        const nextForm = {
-          ...buildProfileFormState(),
-          avatar: dataUrl,
-        }
-        setProfileForm(nextForm)
-        const saved = await persistProfile(nextForm, false)
-        if (!saved) {
+
+        const token = window.sessionStorage.getItem("auth_token")
+        if (!token) {
+          toast.error("Sessão inválida. Inicie sessão novamente.")
           setAvatarPreviewSrc("")
           return
         }
+        const userId = await resolveProfileUserId(token, profileUserId)
+        if (!userId) {
+          toast.error("Identificador do utilizador em falta.")
+          setAvatarPreviewSrc("")
+          return
+        }
+        syncUserDataInSession({ id: userId })
+
+        const upload = await uploadMediaToCloudinary(file, token)
+        if (!upload.success) {
+          toast.error(upload.error)
+          setAvatarPreviewSrc("")
+          return
+        }
+
+        const avatarUpdate = await updateProfileAvatar(token, {
+          user_id: userId,
+          avatarUrl: upload.data.url,
+        })
+        if (!avatarUpdate.success) {
+          toast.error(avatarUpdate.error)
+          setAvatarPreviewSrc("")
+          return
+        }
+
         setPerfilUser((prev) => ({
           ...(prev ?? {}),
-          avatar: dataUrl,
+          avatar: upload.data.url,
         }))
+        syncUserDataInSession({ id: userId, avatar: upload.data.url })
+        toast.success("Foto de perfil atualizada.")
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Não foi possível processar a foto de perfil."
@@ -823,7 +1004,7 @@ export default function PerfilPage() {
         setAvatarUploading(false)
       }
     },
-    [buildProfileFormState, persistProfile, toast]
+    [profileUserId, toast]
   )
 
   const openAvatarFilePicker = useCallback(() => {
@@ -849,47 +1030,73 @@ export default function PerfilPage() {
 
       setIsPerfilLoading(true)
       try {
-        const headers = {
-          Authorization: `Bearer ${token}`,
+        const storedUserId =
+          getStoredUserId() ?? extractUserIdFromJwt(token) ?? null
+        if (storedUserId) {
+          syncUserDataInSession({ id: storedUserId })
         }
-        const [authUserRes, profileRes] = await Promise.all([
-          fetch("/api/auth/user/profile", { method: "GET", headers }),
-          fetch("/api/profiles/me", { method: "GET", headers }),
-        ])
+        const profileOutcome = await fetchProfile(token, storedUserId)
 
-        const authUserData = (await authUserRes.json().catch(() => null)) as
-          | {
-              user?: PerfilUser
-              data?: PerfilUser
-            }
-          | null
-        const profileData = (await profileRes.json().catch(() => null)) as
-          | {
-              user?: PerfilUser
-              data?: PerfilUser
-              perfil?: PerfilInfo
-            }
-          | null
+        if (!profileOutcome.success && !cancelled) {
+          toast.error(profileOutcome.error)
+        }
 
-        if (!cancelled) {
-          const resolvedUser =
-            (pickUserFromUnknown(authUserData) as PerfilUser | null) ??
-            (pickUserFromUnknown(profileData) as PerfilUser | null)
-          if (resolvedUser) {
+        const apiProfile = profileOutcome.success
+          ? unwrapProfilePayload(profileOutcome.data)
+          : null
+
+        if (!cancelled && apiProfile) {
+          try {
+            const mapped = mapProfileApiToPerfilUser(apiProfile)
+            setPerfilUser((prev) => ({
+              ...(prev ?? {}),
+              ...mapped,
+            }))
+            setPerfilInfo((prev) => ({
+              ...(prev ?? {}),
+              ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
+            }))
+            syncUserDataInSession({
+              id: mapped.id,
+              name: mapped.name,
+              avatar: mapped.avatar,
+            })
+          } catch (err) {
+            const fallbackId = extractProfileUserId(apiProfile)
+            if (fallbackId) {
+              syncUserDataInSession({ id: fallbackId })
+              setPerfilUser((prev) => ({ ...(prev ?? {}), id: fallbackId }))
+            }
+            if (!cancelled) {
+              toast.error(
+                err instanceof Error
+                  ? err.message
+                  : "Resposta do perfil inválida."
+              )
+            }
+          }
+        } else if (!cancelled) {
+          const profileData = profileOutcome.success ? profileOutcome.data : null
+          const resolvedId = extractUserId(profileData) ?? getStoredUserId()
+          const profilePicked = pickUserFromUnknown(profileData)
+          if (profilePicked || resolvedId) {
+            const resolvedUser = profilePicked
+              ? mapPickedUserToPerfilUser(profilePicked)
+              : { id: resolvedId ?? undefined }
+            if (resolvedId && !resolvedUser.id) {
+              resolvedUser.id = resolvedId
+            }
             setPerfilUser((prev) => ({
               ...(prev ?? {}),
               ...resolvedUser,
             }))
             syncUserDataInSession({
-              name: typeof resolvedUser.name === "string" ? resolvedUser.name : undefined,
-              avatar:
-                typeof resolvedUser.avatar === "string" ? resolvedUser.avatar : undefined,
+              id: resolvedUser.id ?? resolvedId ?? undefined,
+              name: resolvedUser.name,
+              avatar: resolvedUser.avatar,
             })
           }
-          const perfilFromNested = pickPerfilInfoFromUnknown(profileData?.perfil)
-          const perfilFromRoot = pickPerfilInfoFromUnknown(profileData)
-          const perfilFromData = pickPerfilInfoFromUnknown(profileData?.data)
-          const perfilToApply = perfilFromNested ?? perfilFromRoot ?? perfilFromData
+          const perfilToApply = pickPerfilInfoFromUnknown(profileData)
           if (perfilToApply) {
             setPerfilInfo((prev) => ({
               ...(prev ?? {}),
@@ -909,7 +1116,7 @@ export default function PerfilPage() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, toast])
 
   useEffect(() => {
     if (!profileUserId || !isAuthenticated) return
@@ -1057,18 +1264,27 @@ export default function PerfilPage() {
         ? rawBio
         : `${rawBio.slice(0, bioPreviewLen).trim()}…`
 
-  const locationLabel = perfilInfo?.location?.trim()
-    ? perfilInfo.location
-    : "Localização não definida"
+  const locationLabel =
+    perfilInfo?.province?.trim() ||
+    perfilInfo?.location?.trim() ||
+    "Província não definida"
   const profileTypeLabel = perfilInfo?.profile_type?.trim() || "Não definido"
+  const isProfessional = isProfessionalUser(perfilInfo?.profile_type)
+  const careerTabs = getCareerTabs(isProfessional)
+  const servicesTabIndex = careerTabs.indexOf("Serviços")
   const objectiveLabel = perfilInfo?.objective?.trim() || "Não definido"
   const phoneLabel =
-    Array.isArray(perfilInfo?.phone) && perfilInfo.phone.length > 0
-      ? perfilInfo.phone.join(", ")
-      : "Não definido"
+    typeof perfilInfo?.phone === "string" && perfilInfo.phone.trim()
+      ? perfilInfo.phone.trim()
+      : Array.isArray(perfilInfo?.phone) && perfilInfo.phone.length > 0
+        ? perfilInfo.phone.join(", ")
+        : "Não definido"
   const gradeLabel = perfilInfo?.grade?.trim() || "Não definido"
   const nationalityLabel = perfilInfo?.nationality?.trim() || "Não definido"
-  const cityLabel = perfilInfo?.city?.trim() || "Não definido"
+  const cityLabel =
+    perfilInfo?.municipality?.trim() ||
+    perfilInfo?.city?.trim() ||
+    "Município não definido"
   const interestLabel = perfilInfo?.interest?.trim() || "Não definido"
   const socialLinkRaw = perfilInfo?.social_link?.trim() || ""
   const socialLinkHref = normalizeExternalUrl(socialLinkRaw)
@@ -1123,7 +1339,7 @@ export default function PerfilPage() {
                 <div className="flex flex-wrap gap-2">
                   <Badge color="blue">Github</Badge>
                   <Badge color="yellow">Javascript</Badge>
-                  <Badge color="green">Node.Js</Badge>
+                  <Badge color="violet">Node.Js</Badge>
                   <Badge color="sky">React Native</Badge>
                 </div>
                 <button
@@ -1255,9 +1471,11 @@ export default function PerfilPage() {
                       </p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Briefcase size={14} /> Profissional
-                      </span>
+                      {isProfessional ? (
+                        <span className="flex items-center gap-1">
+                          <Briefcase size={14} /> Profissional
+                        </span>
+                      ) : null}
                       <span className="flex min-w-0 items-center gap-1">
                         <MapPin size={14} className="shrink-0" />
                         <span className="truncate">{locationLabel}</span>
@@ -1370,11 +1588,11 @@ export default function PerfilPage() {
                   </div>
                   {editingInfoField === "location" ? (
                     <div className="mt-2 space-y-2">
-                      <Input
+                      <ProvinceSelect
                         value={editingInfoValue}
-                        onChange={(e) => setEditingInfoValue(e.target.value)}
+                        onChange={setEditingInfoValue}
                         onKeyDown={handleFieldKeyDown}
-                        autoFocus
+                        placeholder="Selecione a província"
                       />
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <Button
@@ -2203,7 +2421,7 @@ export default function PerfilPage() {
                                   <span
                                     className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
                                       status === "published"
-                                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                                        ? "bg-primary/15 text-primary dark:text-primary"
                                         : status === "draft"
                                           ? "bg-amber-500/15 text-amber-800 dark:text-amber-400"
                                           : "bg-muted text-muted-foreground"
@@ -2235,7 +2453,17 @@ export default function PerfilPage() {
             <Card className="min-h-[400px]">
               <div className="mb-3 flex flex-col gap-3 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-base font-semibold text-foreground">Minha Carreira</h3>
-                {careerTab >= 2 ? (
+                {servicesTabIndex >= 0 && careerTab === servicesTabIndex ? (
+                  <Button
+                    type="button"
+                    variant="buy"
+                    size="sm"
+                    className="text-xs font-bold"
+                    onClick={() => setServiceModalOpen(true)}
+                  >
+                    Cadastrar serviço
+                  </Button>
+                ) : careerTab >= 2 && careerTab !== servicesTabIndex ? (
                   <div className="flex flex-wrap gap-2">
                     <select
                       className="rounded-lg border border-border/45 bg-background px-3 py-2 text-xs text-foreground outline-none"
@@ -2254,7 +2482,7 @@ export default function PerfilPage() {
               </div>
 
               <div className="mb-6 flex gap-4 overflow-x-auto border-b border-border/40 pb-1">
-                {CAREER_TABS.map((tab, i) => {
+                {careerTabs.map((tab, i) => {
                   const count =
                     i === 0
                       ? followersTotal
@@ -2356,6 +2584,27 @@ export default function PerfilPage() {
                     })
                   )}
                 </ul>
+              ) : servicesTabIndex >= 0 && careerTab === servicesTabIndex ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="mb-4 rounded-2xl bg-muted p-4">
+                    <Briefcase size={32} className="text-muted-foreground/50" />
+                  </div>
+                  <h4 className="text-base font-semibold text-foreground">
+                    Os seus serviços
+                  </h4>
+                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                    Cadastre o que oferece para aparecer nas pesquisas dos
+                    clientes.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="buy"
+                    className="mt-6"
+                    onClick={() => setServiceModalOpen(true)}
+                  >
+                    Cadastrar serviço
+                  </Button>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-4 rounded-2xl bg-muted p-4">
@@ -2373,6 +2622,13 @@ export default function PerfilPage() {
             </Card>
           </div>
       </div>
+
+      {isProfessional ? (
+        <ServiceRegisterModal
+          open={serviceModalOpen}
+          onOpenChange={setServiceModalOpen}
+        />
+      ) : null}
 
       <DraftFinalizeModal
         open={draftModalOpen}
@@ -2424,14 +2680,14 @@ export default function PerfilPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="profile-location">Localização</Label>
-              <Input
+              <Label htmlFor="profile-location">Província</Label>
+              <ProvinceSelect
                 id="profile-location"
                 value={profileForm.location}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, location: e.target.value }))
+                onChange={(location) =>
+                  setProfileForm((f) => ({ ...f, location }))
                 }
-                autoComplete="address-level2"
+                placeholder="Selecione a província"
               />
             </div>
             <div className="grid gap-2">
@@ -2457,7 +2713,7 @@ export default function PerfilPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="profile-phone">Telefones (separados por vírgula)</Label>
+              <Label htmlFor="profile-phone">Telefone</Label>
               <Input
                 id="profile-phone"
                 value={profileForm.phone}
@@ -2501,7 +2757,7 @@ export default function PerfilPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="profile-city">Cidade</Label>
+              <Label htmlFor="profile-city">Município</Label>
               <Input
                 id="profile-city"
                 value={profileForm.city}
@@ -2580,6 +2836,7 @@ export default function PerfilPage() {
             </Button>
             <Button
               type="button"
+              variant="buy"
               onClick={handleSaveProfile}
               disabled={savingProfile}
             >

@@ -6,11 +6,11 @@ import HeroSection from "@/components/itemheaderpost/itemheaderpost";
 import ItemPostProfissonal from "@/components/itempostprofissional/itempostprofissional";
 import { ItemPostCriar } from "@/components/itempostcriar/itempostcriar";
 
-import { Users, Briefcase } from 'lucide-react';
+import { Users, Briefcase, AlertCircle, RefreshCcw } from 'lucide-react';
 import SolicitacaoCliente from '@/components/itempostclients/itempostclient';
 import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
-import { fetchExploreFeed } from '@/lib/feed-client';
+import { fetchHomeFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
 import type {
   FollowUserResponse,
@@ -75,6 +75,45 @@ const SOLICITACOES_MOCK: SolicitacaoFeedRow[] = [
   }
 ];
 
+function FeedErrorEmptyState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className="w-full py-12 sm:py-16 grid place-items-center"
+      role="alert"
+      aria-live="polite"
+    >
+      <div className="max-w-md w-full rounded-lg bg-white px-6 py-8 text-center">
+        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-red-50 text-red-600">
+          <AlertCircle className="size-6" aria-hidden />
+        </div>
+        <h3 className="text-base font-semibold text-gray-900">
+          Não foi possível carregar o feed
+        </h3>
+        <p className="mt-1 text-sm text-gray-500">
+          {message?.trim() ? message : 'Verifique a sua ligação e tente novamente.'}
+        </p>
+        <div className="mt-5 flex justify-center">
+          <Button
+            type="button"
+            onClick={onRetry}
+            style={{ backgroundColor: lightTheme.colors.primary }}
+            className="gap-2 text-white hover:opacity-90"
+          >
+            <RefreshCcw className="size-4" aria-hidden />
+            Tentar novamente
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -112,7 +151,7 @@ function HomeInner() {
 
     async function run() {
       const token = getSessionToken();
-      const result = await fetchExploreFeed({
+      const result = await fetchHomeFeed({
         page: feedPage,
         limit: 50,
         token,
@@ -145,6 +184,15 @@ function HomeInner() {
   const handleLoadMore = useCallback(() => {
     setFeedLoadingMore(true);
     setFeedPage((previousPage) => previousPage + 1);
+  }, []);
+
+  const handleRetryFeed = useCallback(() => {
+    setFeedError(null);
+    setFeedPage(1);
+    setFeedPosts([]);
+    setFeedLoading(true);
+    setFeedLoadingMore(false);
+    setFeedReloadKey((previousKey) => previousKey + 1);
   }, []);
 
   const handlePostCreated = useCallback((post: PostRecord) => {
@@ -196,6 +244,7 @@ function HomeInner() {
     (authorUserId: string, data: FollowUserResponse) => {
       setFeedPosts((prev) =>
         prev.map((postItem) =>
+          postItem.user &&
           String(postItem.user.id) === String(authorUserId)
             ? { ...postItem, following_author: data.following }
             : postItem
@@ -330,15 +379,11 @@ function HomeInner() {
               </div>
             </div>
 
-            {feedError && (
-              <p className="text-sm text-destructive mt-4" role="alert">
-                {feedError}
-              </p>
-            )}
-
             <div className="">
               {feedLoading && feedPosts.length === 0 && (filtro === 'todos' || filtro === 'profissionais') ? (
                 <HomeFeedSkeleton count={4} />
+              ) : feedError && feedPosts.length === 0 && (filtro === 'todos' || filtro === 'profissionais') ? (
+                <FeedErrorEmptyState message={feedError} onRetry={handleRetryFeed} />
               ) : itemsParaMostrar.length > 0 ? (
                 <>
                   {itemsParaMostrar.map((item) => (
@@ -389,6 +434,12 @@ function HomeInner() {
                 </div>
               )}
             </div>
+
+            {feedError && feedPosts.length > 0 ? (
+              <p className="text-sm text-destructive mt-4" role="alert">
+                {feedError}
+              </p>
+            ) : null}
           </div>
         </main>
 

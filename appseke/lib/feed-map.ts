@@ -32,21 +32,26 @@ function inferMediaKindFromUrl(url: string): "image" | "video" | null {
 
 /** Converte um post da API para o cartão de profissional do feed. */
 export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalFeedRow {
+  const author = post.user ?? {
+    id: "unknown",
+    name: "Utilizador",
+    avatar: null,
+  }
   const titulo =
     typeof post.title === "string" && post.title.trim()
       ? post.title.trim()
       : deriveTitulo(post.content)
   const props: ItemPostProfissonalProps = {
-    nome: post.user.name,
+    nome: author.name ?? "Utilizador",
     data: formatFeedDate(post.created_at),
     descricao: post.content,
     titulo,
-    imagemPerfil: resolveUserAvatarUrl(post.user.avatar),
+    imagemPerfil: resolveUserAvatarUrl(author.avatar),
     imagemPost: (post.media_type === "image" ? post.media_url : post.image)?.trim() || undefined,
     mediaType: post.media_type ?? null,
     mediaUrl: post.media_url ?? null,
-    curtidas: post.stats.likes,
-    authorUserId: post.user.id,
+    curtidas: post.stats?.likes ?? 0,
+    authorUserId: author.id,
     likedByMe: post.liked_by_me === true,
     followingAuthor: post.following_author === true,
   }

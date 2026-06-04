@@ -9,8 +9,11 @@ const getBaseUrl = (): string => {
   return url
 }
 
-const getAuthUserProfilePath = (): string =>
-  process.env.API_AUTH_USER_PROFILE_PATH?.trim() || "/auth/user/profile"
+const getAuthProfilePath = (): string =>
+  process.env.API_AUTH_PROFILE_PATH?.trim() ||
+  process.env.API_AUTH_USER_PROFILE_PATH?.trim() ||
+  process.env.API_PROFILE_PATH?.trim() ||
+  "/profile" /* {NEXT_PUBLIC_URL_API}/profile → .../api/profile */
 
 const getAuthorizationHeader = (
   request: NextRequest
@@ -29,11 +32,11 @@ const getAuthorizationHeader = (
   return { ok: true, value: authorization }
 }
 
-/** GET /api/auth/user/profile — retorna perfil do utilizador autenticado (proxy para API externa) */
+/** GET /api/auth/profile — retorna perfil do utilizador autenticado (proxy para API externa) */
 export async function GET(request: NextRequest) {
   try {
     const baseUrl = getBaseUrl()
-    const path = getAuthUserProfilePath()
+    const path = getAuthProfilePath()
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`
 
     const auth = getAuthorizationHeader(request)
@@ -75,11 +78,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** PUT /api/auth/user/profile — atualiza perfil do utilizador autenticado (proxy para API externa) */
+/** PUT /api/auth/profile — atualiza perfil do utilizador autenticado (proxy para API externa) */
 export async function PUT(request: NextRequest) {
   try {
     const baseUrl = getBaseUrl()
-    const path = getAuthUserProfilePath()
+    const path = getAuthProfilePath()
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`
 
     const auth = getAuthorizationHeader(request)

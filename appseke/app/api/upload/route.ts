@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ApiErrorResponse } from "@/types/auth"
 
-const EXTERNAL_UPLOAD_ENDPOINT = "https://api-cmtf.onrender.com/apiextern/upload"
+const EXTERNAL_UPLOAD_ENDPOINT = "https://api-seke-v1.onrender.com/apiextern/upload"
 
 const getUploadEndpoint = (): string => {
   const explicit = process.env.NEXT_PUBLIC_UPLOAD_API?.trim()

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ApiErrorResponse } from "@/types/auth"
+import { proxyExternalPostsList } from "@/lib/external-posts-list-proxy"
 
 const getBaseUrl = (): string => {
   const url = process.env.NEXT_PUBLIC_URL_API?.trim()
@@ -40,6 +41,15 @@ export async function GET(request: NextRequest) {
       const message =
         (data && typeof data.message === "string" && data.message) ||
         "Não foi possível carregar o feed."
+
+      const isRecoverable =
+        res.status >= 500 ||
+        /user_id/i.test(message) ||
+        /cannot read properties/i.test(message)
+
+      if (isRecoverable) {
+        return proxyExternalPostsList(request, "Erro interno ao carregar o feed.")
+      }
 
       return NextResponse.json(
         { message } satisfies ApiErrorResponse,
