@@ -75,7 +75,10 @@ import type { MyPostSummary, MyPostsPagination } from "@/types/post"
 import { DraftFinalizeModal } from "@/components/draft-finalize-modal/draft-finalize-modal"
 import { ProvinceSelect } from "@/components/province-select/province-select"
 import { ServiceRegisterModal } from "@/components/itemprofileservice/itemprofileservice"
+import { MyServiceCard } from "@/components/itemprofileservice/my-service-card"
+import { fetchMyMarketplaceServices } from "@/lib/marketplace-client"
 import { isProfessionalUser } from "@/lib/is-professional-user"
+import type { MarketplaceService } from "@/types/marketplace"
 
 interface PerfilUser {
   id?: number | string
@@ -586,6 +589,36 @@ export default function PerfilPage() {
     null
   )
   const [serviceModalOpen, setServiceModalOpen] = useState(false)
+  const [myServices, setMyServices] = useState<MarketplaceService[]>([])
+  const [myServicesLoading, setMyServicesLoading] = useState(false)
+  const [myServicesError, setMyServicesError] = useState<string | null>(null)
+
+  const loadMyServices = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const token = window.sessionStorage.getItem("auth_token")
+    if (!token) {
+      setMyServices([])
+      setMyServicesError("Sessão inválida. Inicie sessão novamente.")
+      return
+    }
+
+    setMyServicesLoading(true)
+    setMyServicesError(null)
+    try {
+      const result = await fetchMyMarketplaceServices(token)
+      if (!result.success) {
+        setMyServices([])
+        setMyServicesError(result.error)
+        return
+      }
+      setMyServices(result.data)
+    } catch {
+      setMyServices([])
+      setMyServicesError("Erro de ligação ao carregar os seus serviços.")
+    } finally {
+      setMyServicesLoading(false)
+    }
+  }, [])
 
   const profileUserId = useMemo(() => {
     if (perfilUser?.id != null) {
@@ -1224,6 +1257,14 @@ export default function PerfilPage() {
       setMyPostsPagination(refresh.pagination ?? null)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const isPro = isProfessionalUser(perfilInfo?.profile_type)
+    const servicesIdx = getCareerTabs(isPro).indexOf("Serviços")
+    if (servicesIdx < 0 || careerTab !== servicesIdx) return
+    void loadMyServices()
+  }, [isAuthenticated, perfilInfo?.profile_type, careerTab, loadMyServices])
 
   const handleShare = async () => {
     if (typeof window === "undefined") return
@@ -2488,7 +2529,9 @@ export default function PerfilPage() {
                       ? followersTotal
                       : i === 1
                         ? followingTotal
-                        : 0
+                        : i === servicesTabIndex
+                          ? myServices.length
+                          : 0
                   return (
                     <button
                       key={tab}
@@ -2585,26 +2628,52 @@ export default function PerfilPage() {
                   )}
                 </ul>
               ) : servicesTabIndex >= 0 && careerTab === servicesTabIndex ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <div className="mb-4 rounded-2xl bg-muted p-4">
-                    <Briefcase size={32} className="text-muted-foreground/50" />
+                myServicesLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                    <Loader2 size={18} className="animate-spin" />
+                    A carregar serviços…
                   </div>
-                  <h4 className="text-base font-semibold text-foreground">
-                    Os seus serviços
-                  </h4>
-                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                    Cadastre o que oferece para aparecer nas pesquisas dos
-                    clientes.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="buy"
-                    className="mt-6"
-                    onClick={() => setServiceModalOpen(true)}
-                  >
-                    Cadastrar serviço
-                  </Button>
-                </div>
+                ) : myServicesError ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <p className="text-sm text-destructive">{myServicesError}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => void loadMyServices()}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : myServices.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="mb-4 rounded-2xl bg-muted p-4">
+                      <Briefcase size={32} className="text-muted-foreground/50" />
+                    </div>
+                    <h4 className="text-base font-semibold text-foreground">
+                      Os seus serviços
+                    </h4>
+                    <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                      Cadastre o que oferece para aparecer nas pesquisas dos
+                      clientes.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="buy"
+                      className="mt-6"
+                      onClick={() => setServiceModalOpen(true)}
+                    >
+                      Cadastrar serviço
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {myServices.map((service) => (
+                      <MyServiceCard key={service.id} service={service} />
+                    ))}
+                  </div>
+                )
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-4 rounded-2xl bg-muted p-4">
@@ -2627,6 +2696,7 @@ export default function PerfilPage() {
         <ServiceRegisterModal
           open={serviceModalOpen}
           onOpenChange={setServiceModalOpen}
+          onSuccess={() => void loadMyServices()}
         />
       ) : null}
 

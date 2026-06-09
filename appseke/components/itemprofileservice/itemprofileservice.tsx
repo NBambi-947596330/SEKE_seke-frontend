@@ -22,7 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/components/ui/toaster"
+import { fetchMarketplaceCategories } from "@/lib/marketplace-client"
 import { createService } from "@/lib/services-client"
+import type { MarketplaceCategory } from "@/types/marketplace"
 import type { CreateServiceRequest, ServicePriceUnit } from "@/types/service"
 
 export const DEFAULT_SERVICE_FORM: CreateServiceRequest = {
@@ -34,7 +36,6 @@ export const DEFAULT_SERVICE_FORM: CreateServiceRequest = {
   duration_minutes: 30,
   is_remote: false,
   is_on_site: true,
-  requires_equipment: false,
   max_distance_km: 10,
 }
 
@@ -48,7 +49,6 @@ function getDefaultFormState() {
     durationMinutes: String(DEFAULT_SERVICE_FORM.duration_minutes),
     isRemote: DEFAULT_SERVICE_FORM.is_remote,
     isOnSite: DEFAULT_SERVICE_FORM.is_on_site,
-    requiresEquipment: DEFAULT_SERVICE_FORM.requires_equipment,
     maxDistanceKm: String(DEFAULT_SERVICE_FORM.max_distance_km),
   }
 }
@@ -56,11 +56,13 @@ function getDefaultFormState() {
 interface ServiceRegisterModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSuccess?: () => void
 }
 
 export function ServiceRegisterModal({
   open,
   onOpenChange,
+  onSuccess,
 }: ServiceRegisterModalProps) {
   const toast = useToast()
   const [saving, setSaving] = useState(false)
@@ -76,12 +78,11 @@ export function ServiceRegisterModal({
   )
   const [isRemote, setIsRemote] = useState(DEFAULT_SERVICE_FORM.is_remote)
   const [isOnSite, setIsOnSite] = useState(DEFAULT_SERVICE_FORM.is_on_site)
-  const [requiresEquipment, setRequiresEquipment] = useState(
-    DEFAULT_SERVICE_FORM.requires_equipment
-  )
   const [maxDistanceKm, setMaxDistanceKm] = useState(
     String(DEFAULT_SERVICE_FORM.max_distance_km)
   )
+  const [categories, setCategories] = useState<MarketplaceCategory[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(false)
 
   const resetForm = useCallback(() => {
     const defaults = getDefaultFormState()
@@ -93,13 +94,50 @@ export function ServiceRegisterModal({
     setDurationMinutes(defaults.durationMinutes)
     setIsRemote(defaults.isRemote)
     setIsOnSite(defaults.isOnSite)
-    setRequiresEquipment(defaults.requiresEquipment)
     setMaxDistanceKm(defaults.maxDistanceKm)
   }, [])
 
   useEffect(() => {
     if (!open) resetForm()
   }, [open, resetForm])
+
+  useEffect(() => {
+    if (!open) return
+
+    const token =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem("auth_token")
+        : null
+
+    let cancelled = false
+    setLoadingCategories(true)
+
+    void (async () => {
+      try {
+        const result = await fetchMarketplaceCategories(token ?? undefined)
+        if (cancelled) return
+
+        if (!result.success) {
+          toast.error(result.error)
+          setCategories([])
+          return
+        }
+
+        setCategories(result.data)
+      } catch {
+        if (!cancelled) {
+          toast.error("Erro de ligação ao carregar categorias.")
+          setCategories([])
+        }
+      } finally {
+        if (!cancelled) setLoadingCategories(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, toast])
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -116,7 +154,7 @@ export function ServiceRegisterModal({
 
       const trimmedCategory = categoryId.trim()
       if (!trimmedCategory) {
-        toast.error("Informe o ID da categoria do serviço.")
+        toast.error("Selecione a categoria do serviço.")
         return
       }
 
@@ -164,7 +202,6 @@ export function ServiceRegisterModal({
         duration_minutes: Math.round(durationNum),
         is_remote: isRemote,
         is_on_site: isOnSite,
-        requires_equipment: requiresEquipment,
         max_distance_km: distanceNum,
       }
 
@@ -176,6 +213,7 @@ export function ServiceRegisterModal({
           return
         }
         toast.success("Serviço cadastrado com sucesso.")
+        onSuccess?.()
         onOpenChange(false)
       } catch {
         toast.error("Erro de ligação. Tente novamente.")
@@ -191,9 +229,9 @@ export function ServiceRegisterModal({
       isRemote,
       maxDistanceKm,
       onOpenChange,
+      onSuccess,
       price,
       priceUnit,
-      requiresEquipment,
       title,
       toast,
     ]
@@ -212,15 +250,29 @@ export function ServiceRegisterModal({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="grid gap-2 sm:col-span-2">
-            <Label htmlFor="service_category_id">ID da categoria</Label>
-            <Input
-              id="service_category_id"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              placeholder="UUID da categoria"
-              disabled={saving}
-              required
-            />
+            <Label htmlFor="service_category_id">Categoria</Label>
+            <Select
+              value={categoryId || undefined}
+              onValueChange={setCategoryId}
+              disabled={saving || loadingCategories}
+            >
+              <SelectTrigger id="service_category_id" className="w-full">
+                <SelectValue
+                  placeholder={
+                    loadingCategories
+                      ? "A carregar categorias…"
+                      : "Selecione a categoria"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="service_title">Título</Label>
@@ -318,16 +370,6 @@ export function ServiceRegisterModal({
                 className="h-4 w-4 rounded border"
               />
               <span className="text-sm">Atendimento no local do cliente</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={requiresEquipment}
-                onChange={(e) => setRequiresEquipment(e.target.checked)}
-                disabled={saving}
-                className="h-4 w-4 rounded border"
-              />
-              <span className="text-sm">Requer equipamento próprio</span>
             </label>
           </div>
           <DialogFooter className="sm:col-span-2 gap-3 sm:justify-end">

@@ -6,8 +6,8 @@ import type {
 
 const EXTERNAL_API_BASE = process.env.NEXT_PUBLIC_URL_API?.trim()
 const SERVICES_API = EXTERNAL_API_BASE
-  ? `${EXTERNAL_API_BASE}/services`
-  : "/api/services"
+  ? `${EXTERNAL_API_BASE}/marketplace/services`
+  : "/api/marketplace/services"
 
 export type CreateServiceOutcome =
   | { success: true; data: CreateServiceResponse }

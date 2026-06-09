@@ -3,8 +3,7 @@ import type { ApiErrorResponse } from "@/types/auth"
 import type { CreateServiceRequest } from "@/types/service"
 import { getApiBaseUrl, getAuthorizationHeader } from "@/lib/api-profile-proxy"
 
-/** @deprecated Use POST /api/marketplace/services */
-/** POST /api/services — proxy para API externa POST /marketplace/services */
+/** POST /api/marketplace/services — proxy para API externa POST /marketplace/services */
 export async function POST(request: NextRequest) {
   try {
     const auth = getAuthorizationHeader(request)

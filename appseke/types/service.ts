@@ -1,6 +1,6 @@
 export type ServicePriceUnit = "fixed" | "hourly"
 
-/** Payload para criar serviço (POST /services) */
+/** Payload para criar serviço (POST /marketplace/services) */
 export interface CreateServiceRequest {
   category_id: string
   title: string
@@ -10,7 +10,6 @@ export interface CreateServiceRequest {
   duration_minutes: number
   is_remote: boolean
   is_on_site: boolean
-  requires_equipment: boolean
   max_distance_km: number
 }
 

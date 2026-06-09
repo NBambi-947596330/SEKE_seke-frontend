@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -47,10 +46,19 @@ export function ItemRegister() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [role, setRole] = useState<RegisterRole | "">("")
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+
+  const ensureTermsAccepted = useCallback(() => {
+    if (acceptedTerms) return true
+    toast.error("Aceite os Termos de Uso e a Política de Privacidade para continuar.")
+    return false
+  }, [acceptedTerms, toast])
 
   const handleSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
+
+      if (!ensureTermsAccepted()) return
 
       const trimmedFullName = fullName.trim()
       const trimmedEmail = email.trim()
@@ -90,153 +98,195 @@ export function ItemRegister() {
       })
       router.push("/auth/register/tipo-conta")
     },
-    [fullName, email, phone, password, confirmPassword, role, router, toast]
+    [fullName, email, phone, password, confirmPassword, role, router, toast, ensureTermsAccepted]
   )
 
   const handleGoogleSignUp = useCallback(() => {
+    if (!ensureTermsAccepted()) return
     signIn("google", { callbackUrl: "/" })
-  }, [])
+  }, [ensureTermsAccepted])
 
-    return (
-        <Card style={{
-            padding: lightTheme.spacing.md,
-            borderRadius: lightTheme.borderRadius.small,
-            border: `1px solid ${lightTheme.colors.border}`,
-            fontFamily: lightTheme.typography.fontFamily,
-        }}>
-            <CardHeader className="mt-6">
-                <CardTitle>Criar Conta</CardTitle>
-                <CardDescription style={{
-                    color: lightTheme.colors.textSecondary,
-                    fontSize: lightTheme.typography.fontSize.small
-                }}>
-                    Informe seus dados para criar uma nova conta com segurança.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSubmit}>
-                    <div className="flex flex-col gap-6">
-                        <div className="grid gap-2">
-                            <Label htmlFor="fullName">Nome completo</Label>
-                            <Input
-                                id="fullName"
-                                type="text"
-                                placeholder="Ex: Teste Silva"
-                                autoComplete="name"
-                                value={fullName}
-                                onChange={(e) => setFullName(e.target.value)}
-                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="email">E-mail</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                placeholder="Ex: seu@email.com"
-                                autoComplete="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="role">Tipo de conta</Label>
-                            <Select
-                                value={role || undefined}
-                                onValueChange={(value) => setRole(value as RegisterRole)}
-                            >
-                                <SelectTrigger
-                                    id="role"
-                                    className="w-full"
-                                    style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                >
-                                    <SelectValue placeholder="Selecione o tipo de conta" />
-                                </SelectTrigger>
-                                <SelectContent className="w-full">
-                                    <SelectItem value="client">Cliente</SelectItem>
-                                    <SelectItem value="professional">Profissional</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="phone">Telefone</Label>
-                            <Input
-                                id="phone"
-                                type="tel"
-                                placeholder="Ex: +244923456789"
-                                autoComplete="tel"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="password">Senha</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                placeholder="Senha"
-                                autoComplete="new-password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                required
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="confirmPassword">Confirmação de Senha</Label>
-                            <Input
-                                id="confirmPassword"
-                                type="password"
-                                placeholder="Repita a senha"
-                                autoComplete="new-password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                style={{ border: `1px solid ${lightTheme.colors.border}` }}
-                                required
-                            />
-                        </div>
-                    </div>
-                    <CardFooter className="flex flex-col gap-2 px-0 pb-0 pt-6">
-                        <Button
-                            type="submit"
-                            className="w-full cursor-pointer text-white h-10"
-                            style={{ backgroundColor: lightTheme.colors.primary }}
-                        >
-                            Continuar
-                        </Button>
-                    </CardFooter>
-                </form>
-            </CardContent>
-            <CardFooter className="flex-col gap-2">
-                <div className="relative w-full my-4">
-                    <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" style={{ borderColor: lightTheme.colors.border }} />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                        <span className="px-2 bg-card" style={{ color: lightTheme.colors.textSecondary }}>
-                            ou
-                        </span>
-                    </div>
-                </div>
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full cursor-pointer h-10 gap-2"
-                    style={{ borderColor: lightTheme.colors.border }}
-                    onClick={handleGoogleSignUp}
-                >
-                    <GoogleIcon className="h-5 w-5 shrink-0" />
-                    Entrar com Google
-                </Button>
-                <p className="mt-6">
-                    Já tens uma conta? <Link href="/auth/login" style={{ color: lightTheme.colors.primary }}>Fazer login</Link>
-                </p>
-            </CardFooter>
-        </Card>
-    )
+  const inputBorder = { border: `1px solid ${lightTheme.colors.border}` }
+
+  return (
+    <Card
+      style={{
+        padding: lightTheme.spacing.md,
+        borderRadius: lightTheme.borderRadius.small,
+        border: `1px solid ${lightTheme.colors.border}`,
+        fontFamily: lightTheme.typography.fontFamily,
+      }}
+    >
+      <CardHeader className="space-y-1 pb-4">
+        <CardTitle className="mt-6">Criar Conta</CardTitle>
+        <CardDescription
+          style={{
+            color: lightTheme.colors.textSecondary,
+            fontSize: lightTheme.typography.fontSize.small,
+          }}
+        >
+          Informe seus dados para criar uma nova conta com segurança.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid gap-1.5 sm:col-span-2">
+              <Label htmlFor="fullName">Nome completo</Label>
+              <Input
+                id="fullName"
+                type="text"
+                placeholder="Ex: Teste Silva"
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                style={inputBorder}
+                required
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="Ex: seu@email.com"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={inputBorder}
+                required
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="phone">Telefone</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="Ex: +244923456789"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                style={inputBorder}
+                required
+              />
+            </div>
+            <div className="grid gap-1.5 sm:col-span-2">
+              <Label htmlFor="role">Tipo de conta</Label>
+              <Select
+                value={role || undefined}
+                onValueChange={(value) => setRole(value as RegisterRole)}
+              >
+                <SelectTrigger id="role" className="w-full" style={inputBorder}>
+                  <SelectValue placeholder="Selecione o tipo de conta" />
+                </SelectTrigger>
+                <SelectContent className="w-full">
+                  <SelectItem value="client">Cliente</SelectItem>
+                  <SelectItem value="professional">Profissional</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Senha"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputBorder}
+                required
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirmPassword">Confirmar senha</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Repita a senha"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={inputBorder}
+                required
+              />
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border"
+              style={{ borderColor: lightTheme.colors.border }}
+              aria-describedby="terms-description"
+            />
+            <span id="terms-description" className="text-sm leading-snug" style={{ color: lightTheme.colors.text }}>
+              Li e aceito os{" "}
+              <Link
+                href="/termos-de-uso"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+                style={{ color: lightTheme.colors.primary }}
+              >
+                Termos de Uso
+              </Link>{" "}
+              e a{" "}
+              <Link
+                href="/politica-de-privacidade"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+                style={{ color: lightTheme.colors.primary }}
+              >
+                Política de Privacidade
+              </Link>
+              .
+            </span>
+          </label>
+
+          <Button
+            type="submit"
+            className="w-full cursor-pointer text-white h-10 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: lightTheme.colors.primary }}
+            disabled={!acceptedTerms}
+          >
+            Continuar
+          </Button>
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" style={{ borderColor: lightTheme.colors.border }} />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="px-2 bg-card" style={{ color: lightTheme.colors.textSecondary }}>
+                ou
+              </span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full cursor-pointer h-10 gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: lightTheme.colors.border }}
+            onClick={handleGoogleSignUp}
+            disabled={!acceptedTerms}
+          >
+            <GoogleIcon className="h-5 w-5 shrink-0" />
+            Entrar com Google
+          </Button>
+
+          <p className="text-center text-sm">
+            Já tens uma conta?{" "}
+            <Link href="/auth/login" style={{ color: lightTheme.colors.primary }}>
+              Fazer login
+            </Link>
+          </p>
+        </form>
+      </CardContent>
+    </Card>
+  )
 }
