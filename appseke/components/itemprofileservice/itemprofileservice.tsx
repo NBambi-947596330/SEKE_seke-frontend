@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/select"
 import { useToast } from "@/components/ui/toaster"
 import { fetchMarketplaceCategories } from "@/lib/marketplace-client"
-import { createService } from "@/lib/services-client"
-import type { MarketplaceCategory } from "@/types/marketplace"
+import { createService, updateService } from "@/lib/services-client"
+import type { MarketplaceCategory, MarketplaceService } from "@/types/marketplace"
 import type { CreateServiceRequest, ServicePriceUnit } from "@/types/service"
 
 export const DEFAULT_SERVICE_FORM: CreateServiceRequest = {
@@ -53,17 +53,87 @@ function getDefaultFormState() {
   }
 }
 
+export type ServiceSaveResult = {
+  service: MarketplaceService
+  mode: "create" | "update"
+}
+
+function buildSavedService(
+  payload: CreateServiceRequest,
+  options: {
+    id: string
+    categoryName?: string
+    existing?: MarketplaceService
+  }
+): MarketplaceService {
+  const base = options.existing
+  const now = new Date().toISOString()
+  return {
+    id: options.id,
+    professional_id: base?.professional_id ?? "",
+    category_id: payload.category_id,
+    title: payload.title,
+    description: payload.description,
+    price: payload.price,
+    price_unit: payload.price_unit,
+    duration_minutes: payload.duration_minutes,
+    is_remote: payload.is_remote,
+    is_on_site: payload.is_on_site,
+    max_distance_km: payload.max_distance_km,
+    is_active: base?.is_active ?? true,
+    views_count: base?.views_count ?? 0,
+    bookings_count: base?.bookings_count ?? 0,
+    rating_avg: base?.rating_avg ?? 0,
+    created_at: base?.created_at ?? now,
+    updated_at: now,
+    category_name: options.categoryName ?? base?.category_name,
+    category_slug: base?.category_slug,
+    version: base?.version,
+  }
+}
+
+function readServiceIdFromResponse(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null
+  const root = data as Record<string, unknown>
+  const nested =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : null
+  const id = nested?.id ?? root.id
+  return typeof id === "string" && id.trim() ? id.trim() : null
+}
+
+function mapServiceToFormState(service: MarketplaceService) {
+  return {
+    categoryId: service.category_id,
+    title: service.title,
+    description: service.description,
+    price: String(service.price),
+    priceUnit: (service.price_unit === "hourly" ? "hourly" : "fixed") as ServicePriceUnit,
+    durationMinutes: String(service.duration_minutes),
+    isRemote: service.is_remote,
+    isOnSite: service.is_on_site,
+    maxDistanceKm: String(service.max_distance_km),
+  }
+}
+
 interface ServiceRegisterModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess?: () => void
+  onSuccess?: (result: ServiceSaveResult) => void
+  /** Fallback sem recarregar a página inteira (ex.: API não devolveu o id). */
+  onFallbackRefresh?: () => void
+  service?: MarketplaceService | null
 }
 
 export function ServiceRegisterModal({
   open,
   onOpenChange,
   onSuccess,
+  onFallbackRefresh,
+  service = null,
 }: ServiceRegisterModalProps) {
+  const isEditMode = Boolean(service)
   const toast = useToast()
   const [saving, setSaving] = useState(false)
   const [categoryId, setCategoryId] = useState(DEFAULT_SERVICE_FORM.category_id)
@@ -98,8 +168,25 @@ export function ServiceRegisterModal({
   }, [])
 
   useEffect(() => {
-    if (!open) resetForm()
-  }, [open, resetForm])
+    if (!open) {
+      resetForm()
+      return
+    }
+    if (service) {
+      const values = mapServiceToFormState(service)
+      setCategoryId(values.categoryId)
+      setTitle(values.title)
+      setDescription(values.description)
+      setPrice(values.price)
+      setPriceUnit(values.priceUnit)
+      setDurationMinutes(values.durationMinutes)
+      setIsRemote(values.isRemote)
+      setIsOnSite(values.isOnSite)
+      setMaxDistanceKm(values.maxDistanceKm)
+      return
+    }
+    resetForm()
+  }, [open, service, resetForm])
 
   useEffect(() => {
     if (!open) return
@@ -207,13 +294,46 @@ export function ServiceRegisterModal({
 
       setSaving(true)
       try {
-        const result = await createService(payload, token)
+        const result = service
+          ? await updateService(service.id, payload, token)
+          : await createService(payload, token)
         if (!result.success) {
           toast.error(result.error)
           return
         }
-        toast.success("Serviço cadastrado com sucesso.")
-        onSuccess?.()
+        const categoryName = categories.find(
+          (category) => category.id === trimmedCategory
+        )?.name
+
+        if (service) {
+          onSuccess?.({
+            mode: "update",
+            service: buildSavedService(payload, {
+              id: service.id,
+              categoryName,
+              existing: service,
+            }),
+          })
+        } else {
+          const createdId = readServiceIdFromResponse(result.data)
+          if (!createdId) {
+            toast.success("Serviço cadastrado com sucesso.")
+            onFallbackRefresh?.()
+            onOpenChange(false)
+            return
+          }
+          onSuccess?.({
+            mode: "create",
+            service: buildSavedService(payload, {
+              id: createdId,
+              categoryName,
+            }),
+          })
+        }
+
+        toast.success(
+          service ? "Serviço atualizado com sucesso." : "Serviço cadastrado com sucesso."
+        )
         onOpenChange(false)
       } catch {
         toast.error("Erro de ligação. Tente novamente.")
@@ -222,16 +342,19 @@ export function ServiceRegisterModal({
       }
     },
     [
+      categories,
       categoryId,
       description,
       durationMinutes,
       isOnSite,
       isRemote,
       maxDistanceKm,
+      onFallbackRefresh,
       onOpenChange,
       onSuccess,
       price,
       priceUnit,
+      service,
       title,
       toast,
     ]
@@ -242,10 +365,12 @@ export function ServiceRegisterModal({
       <DialogContent className="border-border/45 shadow-none sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">
-            Cadastrar serviço
+            {isEditMode ? "Atualizar serviço" : "Cadastrar serviço"}
           </DialogTitle>
           <DialogDescription>
-            Adicione um serviço que oferece para que clientes o encontrem no SEKE.
+            {isEditMode
+              ? "Altere os dados do serviço. As mudanças ficam visíveis na sua listagem."
+              : "Adicione um serviço que oferece para que clientes o encontrem no SEKE."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -386,8 +511,10 @@ export function ServiceRegisterModal({
               {saving ? (
                 <>
                   <Loader2 size={16} className="mr-2 animate-spin" />
-                  A cadastrar…
+                  {isEditMode ? "A guardar…" : "A cadastrar…"}
                 </>
+              ) : isEditMode ? (
+                "Guardar alterações"
               ) : (
                 "Cadastrar serviço"
               )}

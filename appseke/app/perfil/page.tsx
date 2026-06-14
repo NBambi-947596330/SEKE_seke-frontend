@@ -74,9 +74,14 @@ import {
 import type { MyPostSummary, MyPostsPagination } from "@/types/post"
 import { DraftFinalizeModal } from "@/components/draft-finalize-modal/draft-finalize-modal"
 import { ProvinceSelect } from "@/components/province-select/province-select"
-import { ServiceRegisterModal } from "@/components/itemprofileservice/itemprofileservice"
+import { DeleteServiceConfirmDialog } from "@/components/delete-service-confirm-dialog/delete-service-confirm-dialog"
+import {
+  ServiceRegisterModal,
+  type ServiceSaveResult,
+} from "@/components/itemprofileservice/itemprofileservice"
 import { MyServiceCard } from "@/components/itemprofileservice/my-service-card"
 import { fetchMyMarketplaceServices } from "@/lib/marketplace-client"
+import { deleteService, toggleService } from "@/lib/services-client"
 import { isProfessionalUser } from "@/lib/is-professional-user"
 import type { MarketplaceService } from "@/types/marketplace"
 
@@ -589,36 +594,156 @@ export default function PerfilPage() {
     null
   )
   const [serviceModalOpen, setServiceModalOpen] = useState(false)
+  const [editingService, setEditingService] = useState<MarketplaceService | null>(null)
   const [myServices, setMyServices] = useState<MarketplaceService[]>([])
   const [myServicesLoading, setMyServicesLoading] = useState(false)
   const [myServicesError, setMyServicesError] = useState<string | null>(null)
+  const [togglingServiceId, setTogglingServiceId] = useState<string | null>(null)
+  const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null)
+  const [deleteServiceDialogOpen, setDeleteServiceDialogOpen] = useState(false)
+  const [servicePendingDelete, setServicePendingDelete] =
+    useState<MarketplaceService | null>(null)
+  const myServicesFetchedRef = useRef(false)
 
-  const loadMyServices = useCallback(async () => {
+  const loadMyServices = useCallback(async (options?: { silent?: boolean }) => {
     if (typeof window === "undefined") return
     const token = window.sessionStorage.getItem("auth_token")
     if (!token) {
       setMyServices([])
       setMyServicesError("Sessão inválida. Inicie sessão novamente.")
+      myServicesFetchedRef.current = false
       return
     }
 
-    setMyServicesLoading(true)
+    const showLoading = !options?.silent
+    if (showLoading) {
+      setMyServicesLoading(true)
+    }
     setMyServicesError(null)
     try {
       const result = await fetchMyMarketplaceServices(token)
       if (!result.success) {
-        setMyServices([])
+        if (!options?.silent) {
+          setMyServices([])
+        }
         setMyServicesError(result.error)
         return
       }
       setMyServices(result.data)
+      myServicesFetchedRef.current = true
     } catch {
-      setMyServices([])
+      if (!options?.silent) {
+        setMyServices([])
+      }
       setMyServicesError("Erro de ligação ao carregar os seus serviços.")
     } finally {
-      setMyServicesLoading(false)
+      if (showLoading) {
+        setMyServicesLoading(false)
+      }
     }
   }, [])
+
+  const handleToggleService = useCallback(
+    async (serviceId: string) => {
+      if (typeof window === "undefined") return
+      const token = window.sessionStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Sessão inválida. Inicie sessão novamente.")
+        return
+      }
+
+      setTogglingServiceId(serviceId)
+      try {
+        const result = await toggleService(serviceId, token)
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
+
+        const apiActive = result.data?.data?.is_active
+        let nextActive = false
+
+        setMyServices((prev) =>
+          prev.map((service) => {
+            if (service.id !== serviceId) return service
+            const isActive =
+              typeof apiActive === "boolean" ? apiActive : !service.is_active
+            nextActive = isActive
+            return { ...service, is_active: isActive }
+          })
+        )
+
+        toast.success(nextActive ? "Serviço ativado." : "Serviço desativado.")
+      } catch {
+        toast.error("Erro de ligação ao atualizar o serviço.")
+      } finally {
+        setTogglingServiceId(null)
+      }
+    },
+    [toast]
+  )
+
+  const handleServiceSaved = useCallback((result: ServiceSaveResult) => {
+    setMyServices((prev) =>
+      result.mode === "create"
+        ? [result.service, ...prev]
+        : prev.map((item) =>
+            item.id === result.service.id ? result.service : item
+          )
+    )
+    myServicesFetchedRef.current = true
+    setMyServicesError(null)
+  }, [])
+
+  const openCreateServiceModal = useCallback(() => {
+    setEditingService(null)
+    setServiceModalOpen(true)
+  }, [])
+
+  const handleEditService = useCallback((service: MarketplaceService) => {
+    setEditingService(service)
+    setServiceModalOpen(true)
+  }, [])
+
+  const handleRequestDeleteService = useCallback(
+    (serviceId: string) => {
+      const service = myServices.find((item) => item.id === serviceId) ?? null
+      setServicePendingDelete(service)
+      setDeleteServiceDialogOpen(true)
+    },
+    [myServices]
+  )
+
+  const handleConfirmDeleteService = useCallback(async () => {
+    if (!servicePendingDelete) return
+    if (typeof window === "undefined") return
+
+    const token = window.sessionStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Sessão inválida. Inicie sessão novamente.")
+      return
+    }
+
+    setDeletingServiceId(servicePendingDelete.id)
+    try {
+      const result = await deleteService(servicePendingDelete.id, token)
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+
+      setMyServices((prev) =>
+        prev.filter((service) => service.id !== servicePendingDelete.id)
+      )
+      toast.success("Serviço eliminado.")
+      setDeleteServiceDialogOpen(false)
+      setServicePendingDelete(null)
+    } catch {
+      toast.error("Erro de ligação ao eliminar o serviço.")
+    } finally {
+      setDeletingServiceId(null)
+    }
+  }, [servicePendingDelete, toast])
 
   const profileUserId = useMemo(() => {
     if (perfilUser?.id != null) {
@@ -1259,10 +1384,14 @@ export default function PerfilPage() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated) {
+      myServicesFetchedRef.current = false
+      return
+    }
     const isPro = isProfessionalUser(perfilInfo?.profile_type)
     const servicesIdx = getCareerTabs(isPro).indexOf("Serviços")
     if (servicesIdx < 0 || careerTab !== servicesIdx) return
+    if (myServicesFetchedRef.current) return
     void loadMyServices()
   }, [isAuthenticated, perfilInfo?.profile_type, careerTab, loadMyServices])
 
@@ -2500,7 +2629,7 @@ export default function PerfilPage() {
                     variant="buy"
                     size="sm"
                     className="text-xs font-bold"
-                    onClick={() => setServiceModalOpen(true)}
+                    onClick={openCreateServiceModal}
                   >
                     Cadastrar serviço
                   </Button>
@@ -2628,12 +2757,12 @@ export default function PerfilPage() {
                   )}
                 </ul>
               ) : servicesTabIndex >= 0 && careerTab === servicesTabIndex ? (
-                myServicesLoading ? (
+                myServicesLoading && myServices.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
                     <Loader2 size={18} className="animate-spin" />
                     A carregar serviços…
                   </div>
-                ) : myServicesError ? (
+                ) : myServicesError && myServices.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <p className="text-sm text-destructive">{myServicesError}</p>
                     <Button
@@ -2662,7 +2791,7 @@ export default function PerfilPage() {
                       type="button"
                       variant="buy"
                       className="mt-6"
-                      onClick={() => setServiceModalOpen(true)}
+                      onClick={openCreateServiceModal}
                     >
                       Cadastrar serviço
                     </Button>
@@ -2670,7 +2799,15 @@ export default function PerfilPage() {
                 ) : (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {myServices.map((service) => (
-                      <MyServiceCard key={service.id} service={service} />
+                      <MyServiceCard
+                        key={service.id}
+                        service={service}
+                        onToggle={(id) => void handleToggleService(id)}
+                        onEdit={handleEditService}
+                        onDelete={handleRequestDeleteService}
+                        isToggling={togglingServiceId === service.id}
+                        isDeleting={deletingServiceId === service.id}
+                      />
                     ))}
                   </div>
                 )
@@ -2693,11 +2830,28 @@ export default function PerfilPage() {
       </div>
 
       {isProfessional ? (
-        <ServiceRegisterModal
-          open={serviceModalOpen}
-          onOpenChange={setServiceModalOpen}
-          onSuccess={() => void loadMyServices()}
-        />
+        <>
+          <ServiceRegisterModal
+            open={serviceModalOpen}
+            onOpenChange={(open) => {
+              setServiceModalOpen(open)
+              if (!open) setEditingService(null)
+            }}
+            service={editingService}
+            onSuccess={handleServiceSaved}
+            onFallbackRefresh={() => void loadMyServices({ silent: true })}
+          />
+          <DeleteServiceConfirmDialog
+            open={deleteServiceDialogOpen}
+            onOpenChange={(open) => {
+              setDeleteServiceDialogOpen(open)
+              if (!open) setServicePendingDelete(null)
+            }}
+            serviceTitle={servicePendingDelete?.title}
+            loading={Boolean(deletingServiceId)}
+            onConfirm={handleConfirmDeleteService}
+          />
+        </>
       ) : null}
 
       <DraftFinalizeModal

@@ -14,6 +14,8 @@ export interface SolicitacaoClienteProps {
   bairro?: string;
   prioridade?: 'baixa' | 'media' | 'alta';
   telefone?: string;
+  orcamento?: string;
+  totalPropostas?: number;
 }
 
 export default function SolicitacaoCliente({
@@ -26,7 +28,9 @@ export default function SolicitacaoCliente({
   localizacao = "Luanda",
   bairro = "Talatona",
   prioridade = 'media',
-  telefone = "+244 900 000 000"
+  telefone,
+  orcamento,
+  totalPropostas,
 }: SolicitacaoClienteProps) {
   const avatarSrc = resolveUserAvatarUrl(avatar)
 
@@ -91,6 +95,14 @@ export default function SolicitacaoCliente({
         <div className="mb-4">
           <h4 className="text-sm font-medium text-gray-900">{servico}</h4>
           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{descricao}</p>
+          {orcamento ? (
+            <p className="text-xs font-medium text-gray-700 mt-2">{orcamento}</p>
+          ) : null}
+          {typeof totalPropostas === "number" && totalPropostas > 0 ? (
+            <p className="text-xs text-gray-500 mt-1">
+              {totalPropostas} proposta{totalPropostas !== 1 ? "s" : ""}
+            </p>
+          ) : null}
         </div>
 
         {/* Ações simplificadas */}

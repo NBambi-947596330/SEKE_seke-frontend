@@ -11,3 +11,30 @@ export interface ProfessionalProfileResponse {
   success?: boolean
   data?: Record<string, unknown>
 }
+
+export interface ProfessionalListItem {
+  id: string
+  user_id: string
+  is_verified: boolean
+  hourly_rate: string | number | null
+  is_available: boolean
+  rating_avg: string | number
+  total_reviews: number
+  created_at: string
+  updated_at: string
+  version?: number
+  full_name: string
+  email?: string
+  phone?: string | null
+  profile_photo_url?: string | null
+  province?: string | null
+  municipality?: string | null
+  bio?: string | null
+}
+
+export interface ProfessionalsListResponse {
+  success: boolean
+  professionals: ProfessionalListItem[]
+  total_count: number
+  total_pages: number
+}

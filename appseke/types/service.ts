@@ -18,3 +18,28 @@ export interface CreateServiceResponse {
   success?: boolean
   data?: Record<string, unknown>
 }
+
+/** Payload para atualizar serviço (PUT /marketplace/services/:id) */
+export type UpdateServiceRequest = CreateServiceRequest
+
+export interface UpdateServiceResponse {
+  message?: string
+  success?: boolean
+  data?: Record<string, unknown>
+}
+
+export interface DeleteServiceResponse {
+  message?: string
+  success?: boolean
+}
+
+/** Resposta de PATCH /marketplace/services/:id/toggle */
+export interface ToggleServiceResponse {
+  message?: string
+  success?: boolean
+  data?: {
+    id?: string
+    is_active?: boolean
+    [key: string]: unknown
+  }
+}
