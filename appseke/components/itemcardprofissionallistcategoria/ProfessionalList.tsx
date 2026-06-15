@@ -127,7 +127,7 @@ export default function ProfessionalList() {
             {professionals.map((pro) => (
               <ItemlistcategoriaProfissional
                 key={pro.id}
-                userId={pro.user_id}
+                professionalId={pro.id}
                 name={pro.full_name}
                 image={pro.profile_photo_url}
                 rating={Number(pro.rating_avg) || 0}

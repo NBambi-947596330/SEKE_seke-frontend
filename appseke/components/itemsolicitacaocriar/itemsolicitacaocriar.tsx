@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Image from "next/image"
-import { Loader2, Send } from "lucide-react"
+import { Loader2, MapPin, RefreshCw, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -27,6 +27,7 @@ import { useToast } from "@/components/ui/toaster"
 import { useAuth } from "@/lib/use-auth"
 import { fetchMarketplaceCategories } from "@/lib/marketplace-client"
 import { createServiceRequest } from "@/lib/service-request-client"
+import { getClientGeolocation, type GeoCoords } from "@/lib/geolocation"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 import type { MarketplaceCategory } from "@/types/marketplace"
@@ -51,15 +52,35 @@ function toLocalDatetimeInputValue(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+function formatPreferredDateForApi(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toISOString().replace(/\.\d{3}Z$/, "Z")
+}
+
 export interface ItemSolicitacaoCriarProps {
   onSuccess?: (request: MarketplaceServiceRequest) => void
   className?: string
+  /** Só o diálogo, sem o cartão do feed (ex.: perfil do profissional). */
+  dialogOnly?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  professionalContext?: { name: string }
 }
 
-export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCriarProps) {
+export function ItemSolicitacaoCriar({
+  onSuccess,
+  className,
+  dialogOnly = false,
+  open: controlledOpen,
+  onOpenChange,
+  professionalContext,
+}: ItemSolicitacaoCriarProps) {
   const toast = useToast()
   const { user, isAuthenticated } = useAuth()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<MarketplaceCategory[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(false)
@@ -72,6 +93,9 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
   const [preferredDate, setPreferredDate] = useState("")
   const [locationText, setLocationText] = useState("")
   const [isUrgent, setIsUrgent] = useState(false)
+  const [coords, setCoords] = useState<GeoCoords | null>(null)
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
 
   const resetForm = useCallback(() => {
     setCategoryId("")
@@ -82,6 +106,27 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
     setPreferredDate("")
     setLocationText("")
     setIsUrgent(false)
+    setCoords(null)
+    setLocationError(null)
+    setLocationLoading(false)
+  }, [])
+
+  const refreshClientLocation = useCallback(async (): Promise<GeoCoords | null> => {
+    setLocationLoading(true)
+    setLocationError(null)
+
+    const result = await getClientGeolocation()
+
+    setLocationLoading(false)
+
+    if (result.success) {
+      setCoords(result.coords)
+      return result.coords
+    }
+
+    setCoords(null)
+    setLocationError(result.message)
+    return null
   }, [])
 
   useEffect(() => {
@@ -104,6 +149,11 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
       cancelled = true
     }
   }, [open, toast])
+
+  useEffect(() => {
+    if (!open) return
+    void refreshClientLocation()
+  }, [open, refreshClientLocation])
 
   useEffect(() => {
     if (open && !preferredDate) {
@@ -159,11 +209,23 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
       }
 
       const isoDate = preferredDate.trim()
-        ? new Date(preferredDate).toISOString()
-        : getDefaultPreferredDate()
+        ? formatPreferredDateForApi(preferredDate)
+        : formatPreferredDateForApi(getDefaultPreferredDate())
 
       setIsLoading(true)
       try {
+        let resolvedCoords = coords
+        if (!resolvedCoords) {
+          resolvedCoords = await refreshClientLocation()
+        }
+        if (!resolvedCoords) {
+          toast.error(
+            locationError ??
+              "Ative a localização do dispositivo para publicar a solicitação."
+          )
+          return
+        }
+
         const result = await createServiceRequest(
           {
             category_id: categoryId.trim(),
@@ -174,6 +236,8 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
             preferred_date: isoDate,
             is_urgent: isUrgent,
             location_text: locationText.trim(),
+            latitude: resolvedCoords.latitude,
+            longitude: resolvedCoords.longitude,
           },
           token
         )
@@ -202,62 +266,43 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
       preferredDate,
       locationText,
       isUrgent,
+      coords,
+      locationError,
+      refreshClientLocation,
       onSuccess,
       resetForm,
       toast,
     ]
   )
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !dialogOnly) {
     return null
   }
 
   const avatarSrc = resolveUserAvatarUrl(user?.image)
 
-  return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground",
-        className
-      )}
+  const dialog = (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) resetForm()
+      }}
     >
-      <div className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="size-11 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
-            <Image
-              src={avatarSrc}
-              alt=""
-              width={44}
-              height={44}
-              className="size-full object-cover"
-              unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="h-11 w-full cursor-pointer rounded-full border border-border/70 bg-muted/30 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
-          >
-            Precisa de um profissional? Descreva o serviço…
-          </button>
-        </div>
-      </div>
-
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next)
-          if (!next) resetForm()
-        }}
-      >
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>Solicitar um serviço</DialogTitle>
-              <DialogDescription>
-                Descreva o que precisa. Profissionais da categoria verão o seu pedido na home.
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>
+              {professionalContext?.name
+                ? `Solicitar serviço a ${professionalContext.name}`
+                : "Solicitar um serviço"}
+            </DialogTitle>
+            <DialogDescription>
+              {professionalContext?.name
+                ? `Descreva o que precisa. ${professionalContext.name} e outros profissionais da categoria poderão responder.`
+                : "Descreva o que precisa. Profissionais da categoria verão o seu pedido na home."}
+            </DialogDescription>
+          </DialogHeader>
 
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -354,14 +399,62 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="sr-location">Localização</Label>
+                <Label htmlFor="sr-location">Localização (texto)</Label>
                 <ProvinceSelect
                   id="sr-location"
                   value={locationText}
                   onChange={setLocationText}
                   disabled={isLoading}
-                  placeholder="Selecione a província"
+                  placeholder="Ex.: Luanda"
                 />
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin
+                      className={cn(
+                        "size-4 shrink-0 mt-0.5",
+                        coords ? "text-emerald-600" : "text-muted-foreground"
+                      )}
+                      aria-hidden
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        Localização GPS
+                      </p>
+                      {locationLoading ? (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          A obter a sua posição…
+                        </p>
+                      ) : coords ? (
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {coords.latitude}, {coords.longitude}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-destructive mt-0.5">
+                          {locationError ??
+                            "Permita o acesso à localização para continuar."}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 h-8"
+                    disabled={isLoading || locationLoading}
+                    onClick={() => void refreshClientLocation()}
+                  >
+                    {locationLoading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-3.5" />
+                    )}
+                    <span className="sr-only">Atualizar localização</span>
+                  </Button>
+                </div>
               </div>
 
               <label className="flex items-center gap-3 cursor-pointer">
@@ -377,7 +470,10 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
             </div>
 
             <DialogFooter>
-              <Button type="submit" disabled={isLoading || categoriesLoading}>
+              <Button
+                type="submit"
+                disabled={isLoading || categoriesLoading || locationLoading || !coords}
+              >
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 size-4 animate-spin" />
@@ -394,6 +490,42 @@ export function ItemSolicitacaoCriar({ onSuccess, className }: ItemSolicitacaoCr
           </form>
         </DialogContent>
       </Dialog>
+  )
+
+  if (dialogOnly) {
+    return dialog
+  }
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground",
+        className
+      )}
+    >
+      <div className="p-4">
+        <div className="flex items-center gap-3">
+          <div className="size-11 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
+            <Image
+              src={avatarSrc}
+              alt=""
+              width={44}
+              height={44}
+              className="size-full object-cover"
+              unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="h-11 w-full cursor-pointer rounded-full border border-border/70 bg-muted/30 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
+          >
+            Precisa de um profissional? Descreva o serviço…
+          </button>
+        </div>
+      </div>
+
+      {dialog}
     </div>
   )
 }

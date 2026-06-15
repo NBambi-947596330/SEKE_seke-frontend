@@ -23,6 +23,7 @@ export interface MarketplaceServiceRequest {
   municipality?: string | null
   category_name?: string
   has_my_proposal?: boolean
+  my_proposal_id?: string | null
   total_proposals?: string | number
 }
 
@@ -52,6 +53,6 @@ export interface CreateServiceRequestPayload {
   preferred_date: string
   is_urgent: boolean
   location_text: string
-  latitude?: number
-  longitude?: number
+  latitude: number
+  longitude: number
 }

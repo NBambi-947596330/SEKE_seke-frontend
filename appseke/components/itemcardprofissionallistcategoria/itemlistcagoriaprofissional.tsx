@@ -11,7 +11,7 @@ import {
 } from "@/lib/user-avatar";
 
 interface ItemlistcategoriaProfissionalProps {
-  userId: string;
+  professionalId: string;
   name: string;
   image?: string | null;
   rating: number;
@@ -33,7 +33,7 @@ function formatLocation(
 }
 
 export default function ItemlistcategoriaProfissional({
-  userId,
+  professionalId,
   name,
   image,
   rating,
@@ -51,7 +51,9 @@ export default function ItemlistcategoriaProfissional({
   const bioText = bio?.trim();
 
   const goToProfile = () => {
-    router.push(`/detalhesuser?userId=${encodeURIComponent(userId)}`);
+    router.push(
+      `/categoria-profissional/${encodeURIComponent(professionalId)}`
+    );
   };
 
   return (

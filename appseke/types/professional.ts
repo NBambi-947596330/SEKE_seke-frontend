@@ -38,3 +38,13 @@ export interface ProfessionalsListResponse {
   total_count: number
   total_pages: number
 }
+
+export interface ProfessionalDetail extends ProfessionalListItem {
+  latitude?: number | null
+  longitude?: number | null
+}
+
+export interface ProfessionalDetailResponse {
+  success: boolean
+  data: ProfessionalDetail
+}

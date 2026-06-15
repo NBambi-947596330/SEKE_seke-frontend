@@ -1,5 +1,7 @@
+"use client";
+
 import Image from 'next/image';
-import { MapPin, Phone } from 'lucide-react';
+import { Loader2, MapPin, Phone } from 'lucide-react';
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from '@/lib/user-avatar';
 import { lightTheme } from '@/style/light';
 
@@ -16,6 +18,16 @@ export interface SolicitacaoClienteProps {
   telefone?: string;
   orcamento?: string;
   totalPropostas?: number;
+  serviceRequestId?: string;
+  proposalId?: string | null;
+  hasMyProposal?: boolean;
+  showAcceptAction?: boolean;
+  isProcessing?: boolean;
+  processingAction?: 'accept' | 'reject' | null;
+  accepted?: boolean;
+  rejected?: boolean;
+  onAccept?: () => void;
+  onReject?: () => void;
 }
 
 export default function SolicitacaoCliente({
@@ -31,6 +43,13 @@ export default function SolicitacaoCliente({
   telefone,
   orcamento,
   totalPropostas,
+  showAcceptAction = false,
+  isProcessing = false,
+  processingAction = null,
+  accepted = false,
+  rejected = false,
+  onAccept,
+  onReject,
 }: SolicitacaoClienteProps) {
   const avatarSrc = resolveUserAvatarUrl(avatar)
 
@@ -48,7 +67,6 @@ export default function SolicitacaoCliente({
 
   return (
     <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
-      {/* Cabeçalho minimalista */}
       <div className="px-4 py-3 flex items-center justify-between border-b border-gray-50">
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span>{tempoSolicitacao}</span>
@@ -60,9 +78,7 @@ export default function SolicitacaoCliente({
         </span>
       </div>
 
-      {/* Conteúdo */}
       <div className="p-4">
-        {/* Linha do cliente */}
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 bg-gray-100 rounded-full overflow-hidden shrink-0">
             <Image
@@ -91,7 +107,6 @@ export default function SolicitacaoCliente({
           </div>
         </div>
 
-        {/* Serviço - sem fundo */}
         <div className="mb-4">
           <h4 className="text-sm font-medium text-gray-900">{servico}</h4>
           <p className="text-xs text-gray-500 mt-1 line-clamp-2">{descricao}</p>
@@ -105,20 +120,56 @@ export default function SolicitacaoCliente({
           ) : null}
         </div>
 
-        {/* Ações simplificadas */}
-        <div className="flex items-center gap-2">
-          <button 
-           style={{
-                  backgroundColor: lightTheme.colors.primary,
-                  
-                }}
-          className="flex-1  text-white text-sm py-2 rounded-lg transition-colors">
-            Aceitar
-          </button>
-          <button className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
-            Detalhes
-          </button>
-        </div>
+        {showAcceptAction ? (
+          <div className="flex items-center gap-2">
+            {rejected ? (
+              <p className="w-full text-center text-sm font-medium text-gray-500 py-2">
+                Serviço rejeitado
+              </p>
+            ) : accepted ? (
+              <p
+                className="w-full text-center text-sm font-medium py-2 rounded-lg text-white"
+                style={{ backgroundColor: lightTheme.colors.success }}
+              >
+                Serviço aceite
+              </p>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onAccept}
+                  disabled={isProcessing || !onAccept}
+                  style={{ backgroundColor: lightTheme.colors.primary }}
+                  className="flex-1 flex items-center justify-center gap-2 text-white text-sm py-2 rounded-lg transition-colors hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isProcessing && processingAction === "accept" ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      A aceitar…
+                    </>
+                  ) : (
+                    "Aceitar"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onReject}
+                  disabled={isProcessing || !onReject}
+                  className="flex-1 flex items-center justify-center gap-2 text-gray-600 text-sm py-2 rounded-lg transition-colors hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isProcessing && processingAction === "reject" ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      A rejeitar…
+                    </>
+                  ) : (
+                    "Rejeitar"
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

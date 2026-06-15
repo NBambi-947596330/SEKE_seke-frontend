@@ -11,6 +11,7 @@ import { Users, Briefcase, AlertCircle, RefreshCcw } from 'lucide-react';
 import SolicitacaoCliente from '@/components/itempostclients/itempostclient';
 import { lightTheme } from '@/style/light';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toaster';
 import { fetchHomeFeed } from '@/lib/feed-client';
 import { postDetailToProfissionalFeedRow, postRecordToPostDetail } from '@/lib/feed-map';
 import type {
@@ -28,6 +29,7 @@ import {
   toSolicitacaoFeedItem,
 } from '@/types/home-feed';
 import { fetchServiceRequests } from '@/lib/service-request-client';
+import { acceptProposal, rejectProposal } from '@/lib/proposals-client';
 import { serviceRequestToSolicitacaoRow } from '@/lib/service-request-map';
 import type { MarketplaceServiceRequest, ServiceRequestPagination } from '@/types/service-request';
 import { useAccountRole } from '@/lib/use-account-role';
@@ -83,6 +85,7 @@ function FeedErrorEmptyState({
 function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
   const [filtroLocal, setFiltroLocal] = useState<
     'todos' | 'solicitacoes' | 'profissionais'
   >('todos');
@@ -121,6 +124,16 @@ function HomeInner() {
   const [serviceRequestsLoading, setServiceRequestsLoading] = useState(true);
   const [serviceRequestsLoadingMore, setServiceRequestsLoadingMore] = useState(false);
   const [serviceRequestsError, setServiceRequestsError] = useState<string | null>(null);
+  const [processingRequest, setProcessingRequest] = useState<{
+    id: string;
+    action: 'accept' | 'reject';
+  } | null>(null);
+  const [acceptedRequestIds, setAcceptedRequestIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [rejectedRequestIds, setRejectedRequestIds] = useState<Set<string>>(
+    () => new Set()
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -247,6 +260,71 @@ function HomeInner() {
       setServiceRequestsLoading(true);
     },
     []
+  );
+
+  const handleAcceptServiceRequest = useCallback(
+    async (serviceRequestId: string, proposalId?: string | null) => {
+      const token = getSessionToken();
+      if (!token) {
+        toast.error("Inicie sessão para aceitar o serviço.");
+        return;
+      }
+
+      const acceptId = proposalId?.trim() || serviceRequestId.trim();
+
+      setProcessingRequest({ id: serviceRequestId, action: 'accept' });
+      try {
+        const result = await acceptProposal(acceptId, token);
+
+        if (!result.success) {
+          toast.error(result.error);
+          return;
+        }
+
+        toast.success("Serviço aceite com sucesso.");
+        setAcceptedRequestIds((prev) => new Set(prev).add(serviceRequestId));
+        setServiceRequestsReloadKey((previousKey) => previousKey + 1);
+        setServiceRequestsLoading(true);
+      } catch {
+        toast.error("Erro de ligação. Tente novamente.");
+      } finally {
+        setProcessingRequest(null);
+      }
+    },
+    [toast]
+  );
+
+  const handleRejectServiceRequest = useCallback(
+    async (serviceRequestId: string, proposalId?: string | null) => {
+      const token = getSessionToken();
+      if (!token) {
+        toast.error("Inicie sessão para rejeitar o serviço.");
+        return;
+      }
+
+      const rejectId = proposalId?.trim() || serviceRequestId.trim();
+
+      setProcessingRequest({ id: serviceRequestId, action: 'reject' });
+      try {
+        const result = await rejectProposal(rejectId, token);
+
+        if (!result.success) {
+          toast.error(result.error);
+          return;
+        }
+
+        toast.success("Serviço rejeitado.");
+        setRejectedRequestIds((prev) => new Set(prev).add(serviceRequestId));
+        setServiceRequests((prev) =>
+          prev.filter((item) => item.id !== serviceRequestId)
+        );
+      } catch {
+        toast.error("Erro de ligação. Tente novamente.");
+      } finally {
+        setProcessingRequest(null);
+      }
+    },
+    [toast]
   );
 
   const handleFeedPostUpdated = useCallback((detail: PostDetail) => {
@@ -467,7 +545,38 @@ function HomeInner() {
                   {itemsParaMostrar.map((item) => (
                     <div key={item.id} className="py-4">
                       {item.tipo === 'solicitacao' ? (
-                        <SolicitacaoCliente {...item.data} />
+                        <SolicitacaoCliente
+                          {...item.data}
+                          showAcceptAction={accountRole === 'professional'}
+                          isProcessing={
+                            processingRequest?.id ===
+                            (item.data.serviceRequestId ?? item.id)
+                          }
+                          processingAction={
+                            processingRequest?.id ===
+                            (item.data.serviceRequestId ?? item.id)
+                              ? processingRequest.action
+                              : null
+                          }
+                          accepted={acceptedRequestIds.has(
+                            item.data.serviceRequestId ?? item.id
+                          )}
+                          rejected={rejectedRequestIds.has(
+                            item.data.serviceRequestId ?? item.id
+                          )}
+                          onAccept={() =>
+                            void handleAcceptServiceRequest(
+                              item.data.serviceRequestId ?? item.id,
+                              item.data.proposalId
+                            )
+                          }
+                          onReject={() =>
+                            void handleRejectServiceRequest(
+                              item.data.serviceRequestId ?? item.id,
+                              item.data.proposalId
+                            )
+                          }
+                        />
                       ) : (
                         <ItemPostProfissonal
                           {...item.data}

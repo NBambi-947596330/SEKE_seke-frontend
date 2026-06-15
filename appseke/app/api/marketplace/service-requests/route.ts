@@ -135,7 +135,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const payload: Record<string, unknown> = {
+    if (
+      typeof latitude !== "number" ||
+      Number.isNaN(latitude) ||
+      latitude < -90 ||
+      latitude > 90
+    ) {
+      return NextResponse.json(
+        { message: "Latitude inválida. Ative a localização do dispositivo." } satisfies ApiErrorResponse,
+        { status: 400 }
+      )
+    }
+
+    if (
+      typeof longitude !== "number" ||
+      Number.isNaN(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return NextResponse.json(
+        { message: "Longitude inválida. Ative a localização do dispositivo." } satisfies ApiErrorResponse,
+        { status: 400 }
+      )
+    }
+
+    const payload: CreateServiceRequestPayload = {
       category_id: category_id.trim(),
       title: title.trim(),
       description: description.trim(),
@@ -144,13 +168,8 @@ export async function POST(request: NextRequest) {
       preferred_date: preferred_date.trim(),
       is_urgent: Boolean(is_urgent),
       location_text: location_text.trim(),
-    }
-
-    if (typeof latitude === "number" && !Number.isNaN(latitude)) {
-      payload.latitude = latitude
-    }
-    if (typeof longitude === "number" && !Number.isNaN(longitude)) {
-      payload.longitude = longitude
+      latitude,
+      longitude,
     }
 
     const endpoint = `${getApiBaseUrl()}/marketplace/service-requests`
@@ -177,7 +196,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(data, { status: res.status })
   } catch (err) {
     if (err instanceof Error && err.message.includes("NEXT_PUBLIC_URL_API")) {
       return NextResponse.json(

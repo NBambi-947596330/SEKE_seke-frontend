@@ -39,5 +39,8 @@ export function serviceRequestToSolicitacaoRow(
     prioridade: request.is_urgent ? "alta" : "media",
     orcamento: formatBudget(request.budget_min, request.budget_max),
     totalPropostas: Number(request.total_proposals) || 0,
+    serviceRequestId: request.id,
+    proposalId: request.my_proposal_id ?? null,
+    hasMyProposal: request.has_my_proposal === true,
   }
 }

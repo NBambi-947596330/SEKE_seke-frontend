@@ -15,12 +15,103 @@ type Outcome<T> =
   | { success: false; error: string; statusCode?: number }
 
 function isServiceRequest(item: unknown): item is MarketplaceServiceRequest {
-  return (
-    typeof item === "object" &&
-    item !== null &&
-    typeof (item as MarketplaceServiceRequest).id === "string" &&
-    typeof (item as MarketplaceServiceRequest).title === "string"
-  )
+  if (typeof item !== "object" || item === null) return false
+  const o = item as Record<string, unknown>
+  const id = o.id
+  const title = o.title
+  const hasId =
+    (typeof id === "string" && id.trim() !== "") ||
+    (typeof id === "number" && !Number.isNaN(id))
+  return hasId && typeof title === "string"
+}
+
+function normalizeServiceRequest(item: MarketplaceServiceRequest): MarketplaceServiceRequest {
+  return {
+    ...item,
+    id: String(item.id),
+  }
+}
+
+function readIdFromResponse(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null
+  const root = raw as Record<string, unknown>
+  const nested =
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : null
+
+  for (const source of [nested, root]) {
+    if (!source) continue
+    for (const key of ["id", "service_request_id", "request_id"] as const) {
+      const value = source[key]
+      if (typeof value === "string" && value.trim()) return value.trim()
+      if (typeof value === "number" && !Number.isNaN(value)) return String(value)
+    }
+    for (const nestedKey of [
+      "service_request",
+      "serviceRequest",
+      "request",
+    ] as const) {
+      const child = source[nestedKey]
+      if (child && typeof child === "object" && isServiceRequest(child)) {
+        return String(child.id)
+      }
+    }
+  }
+
+  return null
+}
+
+function extractServiceRequestFromResponse(
+  raw: unknown,
+  payload: CreateServiceRequestPayload
+): MarketplaceServiceRequest | null {
+  if (!raw || typeof raw !== "object") return null
+  const root = raw as Record<string, unknown>
+
+  const candidates: unknown[] = [
+    root.data,
+    root.service_request,
+    root.serviceRequest,
+    root.request,
+    root,
+  ]
+
+  if (root.data && typeof root.data === "object" && !Array.isArray(root.data)) {
+    const data = root.data as Record<string, unknown>
+    candidates.push(data.service_request, data.serviceRequest, data.request)
+  }
+
+  for (const candidate of candidates) {
+    if (isServiceRequest(candidate)) {
+      return normalizeServiceRequest(candidate as MarketplaceServiceRequest)
+    }
+  }
+
+  const id = readIdFromResponse(raw)
+  if (!id) return null
+
+  const now = new Date().toISOString()
+  return {
+    id,
+    client_id: "",
+    category_id: payload.category_id,
+    title: payload.title,
+    description: payload.description,
+    budget_min: payload.budget_min,
+    budget_max: payload.budget_max,
+    preferred_date: payload.preferred_date,
+    is_urgent: payload.is_urgent,
+    location_text: payload.location_text,
+    latitude: payload.latitude,
+    longitude: payload.longitude,
+    status: "open",
+    matched_professional_id: null,
+    booking_id: null,
+    expires_at: now,
+    created_at: now,
+    updated_at: now,
+  }
 }
 
 export type FetchServiceRequestsOutcome = Outcome<{
@@ -104,12 +195,7 @@ export async function createServiceRequest(
     return { success: false, error: message, statusCode: res.status }
   }
 
-  const root = raw as Record<string, unknown>
-  const nested =
-    root.data && typeof root.data === "object"
-      ? (root.data as MarketplaceServiceRequest)
-      : null
-  const item = nested && isServiceRequest(nested) ? nested : null
+  const item = extractServiceRequestFromResponse(raw, payload)
 
   if (!item) {
     return { success: false, error: "Resposta inválida do servidor." }
