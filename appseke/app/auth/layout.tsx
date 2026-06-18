@@ -21,7 +21,7 @@ export default function AuthLayout({
   if (hideImage) {
     return (
       <div className="flex min-h-screen font-sans bg-white">
-        <div className="flex w-full items-center justify-center px-6 py-8">
+        <div className="flex w-full items-center justify-center px-4 sm:px-8 py-8">
           {children}
         </div>
       </div>
