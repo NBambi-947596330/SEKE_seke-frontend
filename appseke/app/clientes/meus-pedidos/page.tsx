@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
 
-export default function MeusPedidosPage() {
+export default function ClientesMeusPedidosPage() {
   redirect("/solicitacoes")
 }
