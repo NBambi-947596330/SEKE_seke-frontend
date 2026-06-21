@@ -4,6 +4,8 @@ export interface CreateProposalPayload {
   message: string
 }
 
+export type UpdateProposalPayload = CreateProposalPayload
+
 export interface Proposal {
   id: string
   service_request_id: string

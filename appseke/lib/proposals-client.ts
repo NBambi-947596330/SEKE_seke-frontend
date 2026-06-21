@@ -7,6 +7,7 @@ import type {
   Proposal,
   ProposalResponse,
   ProposalsListResponse,
+  UpdateProposalPayload,
 } from "@/types/proposal"
 
 const EXTERNAL_API_BASE = process.env.NEXT_PUBLIC_URL_API?.trim()
@@ -121,6 +122,8 @@ function extractProposalsList(raw: unknown): Proposal[] {
 export type AcceptProposalOutcome = Outcome<Proposal>
 export type RejectProposalOutcome = Outcome<Proposal>
 export type CreateProposalOutcome = Outcome<Proposal>
+export type UpdateProposalOutcome = Outcome<Proposal>
+export type DeleteProposalOutcome = Outcome<void>
 export type FetchProposalsOutcome = Outcome<Proposal[]>
 export type FetchMyProposalsOutcome = Outcome<ProfessionalSentProposalItem[]>
 
@@ -319,6 +322,80 @@ export async function createProposal(
   }
 
   return { success: true, data: extractProposal(raw, trimmed) }
+}
+
+/** PUT /marketplace/proposals/:id — actualiza proposta do profissional */
+export async function updateProposal(
+  proposalId: string,
+  payload: UpdateProposalPayload,
+  token: string
+): Promise<UpdateProposalOutcome> {
+  const trimmed = proposalId.trim()
+  if (!trimmed) {
+    return { success: false, error: "ID da proposta inválido." }
+  }
+
+  const base = MARKETPLACE_PROPOSALS_API.replace(/\/$/, "")
+  const url = `${base}/${encodeURIComponent(trimmed)}`
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token.trim()}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  })
+
+  const raw = (await res.json().catch(() => ({}))) as
+    | ProposalResponse
+    | ApiErrorResponse
+
+  if (!res.ok) {
+    const message =
+      "message" in raw && typeof raw.message === "string"
+        ? raw.message
+        : "Não foi possível actualizar a proposta."
+    return { success: false, error: message, statusCode: res.status }
+  }
+
+  return { success: true, data: extractProposal(raw, trimmed) }
+}
+
+/** DELETE /marketplace/proposals/:id — elimina proposta do profissional */
+export async function deleteProposal(
+  proposalId: string,
+  token: string
+): Promise<DeleteProposalOutcome> {
+  const trimmed = proposalId.trim()
+  if (!trimmed) {
+    return { success: false, error: "ID da proposta inválido." }
+  }
+
+  const base = MARKETPLACE_PROPOSALS_API.replace(/\/$/, "")
+  const url = `${base}/${encodeURIComponent(trimmed)}`
+
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token.trim()}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  })
+
+  if (!res.ok) {
+    const raw = (await res.json().catch(() => ({}))) as ApiErrorResponse
+    const message =
+      typeof raw.message === "string"
+        ? raw.message
+        : "Não foi possível eliminar a proposta."
+    return { success: false, error: message, statusCode: res.status }
+  }
+
+  return { success: true, data: undefined }
 }
 
 async function proposalAction(

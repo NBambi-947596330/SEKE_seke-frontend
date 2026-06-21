@@ -14,9 +14,12 @@ import {
   Wallet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DeleteProposalConfirmDialog } from "@/components/delete-proposal-confirm-dialog/delete-proposal-confirm-dialog"
+import { ItemPropostaEditar } from "@/components/itempropostaeditar/itempropostaeditar"
 import { ItemPropostasGerir } from "@/components/itempropostasgerir/itempropostasgerir"
+import { useToast } from "@/components/ui/toaster"
 import { formatRelativeTimePt } from "@/lib/format-relative-time"
-import { fetchMyProposals } from "@/lib/proposals-client"
+import { deleteProposal, fetchMyProposals } from "@/lib/proposals-client"
 import {
   fetchClientServiceRequestStats,
   fetchProfessionalServiceRequestStats,
@@ -251,6 +254,7 @@ export function ProfileMarketplacePanels({
   view = "all",
   showSectionHeader = true,
 }: ProfileMarketplacePanelsProps) {
+  const toast = useToast()
   const {
     loading,
     error,
@@ -265,6 +269,49 @@ export function ProfileMarketplacePanels({
     id: string
     servico: string
   } | null>(null)
+
+  const [deleteDialog, setDeleteDialog] = useState<{
+    proposalId: string
+    servico: string
+  } | null>(null)
+  const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null)
+
+  const [editDialog, setEditDialog] = useState<{
+    proposalId: string
+    servico: string
+    proposal: {
+      price: string | number
+      estimated_duration: number
+      message: string
+    }
+  } | null>(null)
+
+  const handleDeleteProposal = useCallback(async () => {
+    if (!deleteDialog) return
+
+    const token = getSessionToken()
+    if (!token) {
+      toast.error("Inicie sessão para eliminar a proposta.")
+      return
+    }
+
+    setDeletingProposalId(deleteDialog.proposalId)
+    try {
+      const result = await deleteProposal(deleteDialog.proposalId, token)
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success("Proposta eliminada com sucesso.")
+      setDeleteDialog(null)
+      await loadData()
+    } catch {
+      toast.error("Erro de ligação. Tente novamente.")
+    } finally {
+      setDeletingProposalId(null)
+    }
+  }, [deleteDialog, loadData, toast])
 
   const professionalRejected = useMemo(() => {
     if (!professionalStats) return 0
@@ -504,6 +551,43 @@ export function ProfileMarketplacePanels({
                         <span>Orçamento pedido: {formatBudget(item.budget_min, item.budget_max)}</span>
                         {sentLabel ? <span>Enviada {sentLabel}</span> : null}
                       </div>
+
+                      {proposal.status?.toLowerCase() === "pending" ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setEditDialog({
+                                proposalId: proposal.id,
+                                servico: title,
+                                proposal: {
+                                  price: proposal.price,
+                                  estimated_duration: proposal.estimated_duration,
+                                  message: proposal.message,
+                                },
+                              })
+                            }
+                          >
+                            Editar proposta
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/5"
+                            onClick={() =>
+                              setDeleteDialog({
+                                proposalId: proposal.id,
+                                servico: title,
+                              })
+                            }
+                          >
+                            Eliminar proposta
+                          </Button>
+                        </div>
+                      ) : null}
                     </li>
                   )
                 })
@@ -562,6 +646,31 @@ export function ProfileMarketplacePanels({
           }}
           onProposalAccepted={() => void loadData()}
           onProposalRejected={() => void loadData()}
+        />
+      ) : null}
+
+      {editDialog ? (
+        <ItemPropostaEditar
+          proposalId={editDialog.proposalId}
+          servico={editDialog.servico}
+          initialProposal={editDialog.proposal}
+          open={Boolean(editDialog)}
+          onOpenChange={(open) => {
+            if (!open) setEditDialog(null)
+          }}
+          onSuccess={() => void loadData()}
+        />
+      ) : null}
+
+      {deleteDialog ? (
+        <DeleteProposalConfirmDialog
+          open={Boolean(deleteDialog)}
+          onOpenChange={(open) => {
+            if (!open) setDeleteDialog(null)
+          }}
+          servico={deleteDialog.servico}
+          loading={deletingProposalId === deleteDialog.proposalId}
+          onConfirm={handleDeleteProposal}
         />
       ) : null}
     </>
