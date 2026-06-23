@@ -1,0 +1,16 @@
+{
+  "extends": "./appseke/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./appseke/*"]
+    }
+  },
+  "include": [
+    "appseke/**/*.ts",
+    "appseke/**/*.tsx",
+    "appseke/.next/types/**/*.ts",
+    "appseke/.next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "appseke/node_modules"]
+}

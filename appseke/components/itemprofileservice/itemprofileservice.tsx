@@ -249,15 +249,14 @@ export function ServiceRegisterModal({
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault()
 
-      if (!collectOnly) {
-        const token =
-          typeof window !== "undefined"
-            ? window.sessionStorage.getItem("auth_token")
-            : null
-        if (!token) {
-          toast.error("Sessão inválida. Inicie sessão novamente.")
-          return
-        }
+      const token =
+        typeof window !== "undefined"
+          ? window.sessionStorage.getItem("auth_token")
+          : null
+
+      if (!collectOnly && !token) {
+        toast.error("Sessão inválida. Inicie sessão novamente.")
+        return
       }
 
       const trimmedCategory = categoryId.trim()
@@ -325,6 +324,11 @@ export function ServiceRegisterModal({
 
       setSaving(true)
       try {
+        if (!token) {
+          toast.error("Sessão inválida. Inicie sessão novamente.")
+          return
+        }
+
         const result = service
           ? await updateService(service.id, payload, token)
           : await createService(payload, token)
