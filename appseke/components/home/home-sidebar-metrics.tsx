@@ -67,8 +67,8 @@ function MetricsCard({
   title: string
   description: string
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>
-  linkHref: string
-  linkLabel: string
+  linkHref?: string
+  linkLabel?: string
   loading?: boolean
   metrics: { label: string; value: string | number }[] | null
   emptyMetrics: { label: string; value: number }[]
@@ -99,12 +99,14 @@ function MetricsCard({
         </div>
       )}
 
-      <Link
-        href={linkHref}
-        className="mt-2.5 block text-center text-xs font-medium text-[#2b81e5] hover:text-[#2b81e5]/80 transition-colors"
-      >
-        {linkLabel}
-      </Link>
+      {linkHref && linkLabel ? (
+        <Link
+          href={linkHref}
+          className="mt-2.5 block text-center text-xs font-medium text-[#2b81e5] hover:text-[#2b81e5]/80 transition-colors"
+        >
+          {linkLabel}
+        </Link>
+      ) : null}
     </div>
   )
 }
@@ -185,8 +187,6 @@ export function HomeSidebarMetrics({ role, userId }: HomeSidebarMetricsProps) {
             : "Resumo dos seus agendamentos"
         }
         icon={CalendarDays}
-        linkHref={isProfessional ? "/profissional" : "/clientes/meus-pedidos"}
-        linkLabel="Ver agendamentos"
         metrics={appointmentItems}
         emptyMetrics={appointmentItems}
       />
@@ -198,7 +198,7 @@ export function HomeSidebarMetrics({ role, userId }: HomeSidebarMetricsProps) {
             : "Resumo das suas solicitações"
         }
         icon={isProfessional ? Send : FileSearch}
-        linkHref="/perfil"
+        linkHref={isProfessional ? "/propostas" : "/solicitacoes"}
         linkLabel={isProfessional ? "Ver propostas" : "Ver solicitações"}
         loading={loading}
         metrics={proposalItems}
