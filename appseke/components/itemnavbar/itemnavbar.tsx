@@ -89,13 +89,23 @@ export function Navbar() {
                         </Link>
                         {isAuthenticated ? (
                             <>
-                                <Link
-                                    href="/categoria-profissional"
-                                    className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-primary lg:gap-2 lg:px-2.5"
-                                >
-                                    <Briefcase size={18} className="shrink-0" aria-hidden />
-                                    <span className="hidden lg:inline">Encontrar profissionais</span>
-                                </Link>
+                                {role === "professional" ? (
+                                    <Link
+                                        href="/?filtro=solicitacoes"
+                                        className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-primary lg:gap-2 lg:px-2.5"
+                                    >
+                                        <ClipboardList size={18} className="shrink-0" aria-hidden />
+                                        <span className="hidden lg:inline">Pedidos ativos</span>
+                                    </Link>
+                                ) : (
+                                    <Link
+                                        href="/categoria-profissional"
+                                        className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-primary lg:gap-2 lg:px-2.5"
+                                    >
+                                        <Briefcase size={18} className="shrink-0" aria-hidden />
+                                        <span className="hidden lg:inline">Encontrar profissionais</span>
+                                    </Link>
+                                )}
                                 {role === "professional" ? (
                                     <Link
                                         href="/propostas"
@@ -199,14 +209,25 @@ export function Navbar() {
                             </Link>
                             {isAuthenticated ? (
                                 <>
-                                    <Link
-                                        href="/categoria-profissional"
-                                        className="flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-primary"
-                                        onClick={() => setIsMenuOpen(false)}
-                                    >
-                                        <Briefcase size={20} className="shrink-0 text-gray-500" aria-hidden />
-                                        Encontrar profissionais
-                                    </Link>
+                                    {role === "professional" ? (
+                                        <Link
+                                            href="/?filtro=solicitacoes"
+                                            className="flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-primary"
+                                            onClick={() => setIsMenuOpen(false)}
+                                        >
+                                            <ClipboardList size={20} className="shrink-0 text-gray-500" aria-hidden />
+                                            Pedidos ativos
+                                        </Link>
+                                    ) : (
+                                        <Link
+                                            href="/categoria-profissional"
+                                            className="flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-primary"
+                                            onClick={() => setIsMenuOpen(false)}
+                                        >
+                                            <Briefcase size={20} className="shrink-0 text-gray-500" aria-hidden />
+                                            Encontrar profissionais
+                                        </Link>
+                                    )}
                                     {role === "professional" ? (
                                         <Link
                                             href="/propostas"
