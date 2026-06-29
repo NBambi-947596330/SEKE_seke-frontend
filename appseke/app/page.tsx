@@ -30,7 +30,7 @@ import {
   toProfissionalFeedItem,
   toSolicitacaoFeedItem,
 } from '@/types/home-feed';
-import { fetchServiceRequests } from '@/lib/service-request-client';
+import { fetchHomeServiceRequests } from '@/lib/service-request-client';
 import { serviceRequestToSolicitacaoRow } from '@/lib/service-request-map';
 import type { MarketplaceServiceRequest, ServiceRequestPagination } from '@/types/service-request';
 import { useAccountRole } from '@/lib/use-account-role';
@@ -183,7 +183,7 @@ function HomeInner() {
 
     async function run() {
       const token = getSessionToken();
-      const result = await fetchServiceRequests({
+      const result = await fetchHomeServiceRequests({
         page: serviceRequestsPage,
         limit: 20,
         token: token ?? undefined,
