@@ -274,12 +274,16 @@ function HomeInner() {
     (serviceRequestId: string, servico: string) => {
       const token = getSessionToken();
       if (!token) {
-        toast.error("Inicie sessão para enviar uma proposta.");
+        router.push(`/auth/login?callbackUrl=${encodeURIComponent('/')}`);
+        return;
+      }
+      if (accountRole === 'client') {
+        toast.error('Apenas profissionais podem enviar propostas.');
         return;
       }
       setProposalDialogRequest({ id: serviceRequestId, servico });
     },
-    [toast]
+    [accountRole, router, toast]
   );
 
   const handleProposalSuccess = useCallback((serviceRequestId: string) => {
@@ -602,7 +606,9 @@ function HomeInner() {
                       {item.tipo === 'solicitacao' ? (
                         <SolicitacaoCliente
                           {...item.data}
-                          showProposalAction={accountRole === 'professional'}
+                          showProposalAction={
+                            !isAuthenticated || accountRole === 'professional'
+                          }
                           showManageProposalsAction={
                             accountRole === 'client' &&
                             sameUserId(viewerUserId, item.data.clientId)
