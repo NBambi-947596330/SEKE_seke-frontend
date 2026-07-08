@@ -379,6 +379,7 @@ export default function ProfessionalList() {
                     province={pro.province}
                     municipality={pro.municipality}
                     isAvailable={pro.is_available}
+                    updatedAt={pro.updated_at}
                     totalReviews={pro.total_reviews}
                     distanceKm={pro.distance_km}
                   />
