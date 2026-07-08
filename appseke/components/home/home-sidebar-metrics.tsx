@@ -187,6 +187,8 @@ export function HomeSidebarMetrics({ role, userId }: HomeSidebarMetricsProps) {
             : "Resumo dos seus agendamentos"
         }
         icon={CalendarDays}
+        linkHref={isProfessional ? "/profissional/agenda" : "/agendamentos"}
+        linkLabel="Ver agendamentos"
         metrics={appointmentItems}
         emptyMetrics={appointmentItems}
       />
