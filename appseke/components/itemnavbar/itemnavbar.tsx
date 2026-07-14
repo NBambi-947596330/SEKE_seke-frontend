@@ -12,6 +12,7 @@ import { UserMenu } from "@/components/itemnavbar/user-menu"
 import { NavbarNotifications } from "@/components/navbar-notifications/navbar-notifications"
 import { lightTheme } from "@/style/light"
 import { ExploreRightPanel } from "@/components/itemexploreseke/itemexploreseke"
+import { HomeFindProfessionalCard } from "@/components/home/home-find-professional-card"
 
 export function Navbar() {
     const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -199,6 +200,14 @@ export function Navbar() {
                 {isMenuOpen && (
                     <div className="border-t border-gray-100 bg-white md:hidden">
                         <div className="max-h-[min(70vh,calc(100dvh-4rem))] space-y-1 overflow-y-auto px-2 py-3 pb-4">
+                            {role !== "professional" ? (
+                                <div className="mb-3 px-1">
+                                    <HomeFindProfessionalCard
+                                        variant="banner"
+                                        onNavigate={() => setIsMenuOpen(false)}
+                                    />
+                                </div>
+                            ) : null}
                             <Link
                                 href="/"
                                 className="flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-primary"

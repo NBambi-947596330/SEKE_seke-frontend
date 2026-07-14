@@ -33,6 +33,8 @@ import {
   Loader2,
   Activity,
   Play,
+  Check,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -527,6 +529,47 @@ function activityStatusLabel(status: string | undefined): string {
   return status?.trim() ? status : "—"
 }
 
+function ProfileInlineFieldActions({
+  saving,
+  onSave,
+  onCancel,
+}: {
+  saving: boolean
+  onSave: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="flex items-center justify-end gap-0.5 pt-1">
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        className="rounded-md border-0 text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
+        onClick={onCancel}
+        disabled={saving}
+        aria-label="Cancelar"
+      >
+        <X size={14} aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="buy"
+        className="rounded-md shadow-none"
+        onClick={onSave}
+        disabled={saving}
+        aria-label={saving ? "A guardar" : "Guardar"}
+      >
+        {saving ? (
+          <Loader2 size={14} className="animate-spin" aria-hidden />
+        ) : (
+          <Check size={14} aria-hidden />
+        )}
+      </Button>
+    </div>
+  )
+}
+
 export default function PerfilPage() {
   const { user, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
@@ -558,6 +601,7 @@ export default function PerfilPage() {
   })
   const [savingProfile, setSavingProfile] = useState(false)
   const [editingInfoField, setEditingInfoField] = useState<
+    | "bio"
     | "location"
     | "profile_type"
     | "objective"
@@ -996,12 +1040,14 @@ export default function PerfilPage() {
   )
 
   const handleSaveProfile = useCallback(async () => {
-    await persistProfile(profileForm, true)
-  }, [persistProfile, profileForm])
+    const current = buildProfileFormState()
+    await persistProfile({ ...current, name: profileForm.name.trim() }, true)
+  }, [buildProfileFormState, persistProfile, profileForm.name])
 
   const handleStartInfoEdit = useCallback(
     (
       field:
+        | "bio"
         | "location"
         | "profile_type"
         | "objective"
@@ -1605,21 +1651,21 @@ export default function PerfilPage() {
                       disabled={avatarUploading || savingProfile}
                     />
                   </div>
-                  <div className="flex gap-2 sm:mb-2">
+                  <div className="flex gap-1.5 sm:mb-2">
                     <button
                       type="button"
                       onClick={handleShare}
-                      className="flex items-center gap-2 rounded-lg border border-border/45 px-4 py-2 text-sm font-semibold transition-all hover:bg-accent md:px-6"
+                      className="flex items-center gap-1.5 rounded-lg border border-border/45 px-3 py-1.5 text-xs font-medium text-foreground transition-all hover:bg-accent"
                     >
-                      <Share2 size={16} /> Partilhar
+                      <Share2 size={14} /> Partilhar
                     </button>
                     <button
                       type="button"
                       onClick={openEditProfile}
-                      className="flex items-center justify-center rounded-lg border border-border/45 p-2 transition-colors hover:bg-accent"
+                      className="flex size-8 items-center justify-center rounded-lg border border-border/45 transition-colors hover:bg-accent"
                       aria-label="Editar perfil"
                     >
-                      <Pencil size={16} />
+                      <Pencil size={14} />
                     </button>
                   </div>
                 </div>
@@ -1712,25 +1758,42 @@ export default function PerfilPage() {
                 <h3 className="text-base font-semibold text-foreground">Biografia</h3>
                 <button
                   type="button"
-                  onClick={openEditProfile}
+                  onClick={() => handleStartInfoEdit("bio")}
                   aria-label="Editar biografia"
                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <Pencil size={16} />
                 </button>
               </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {bioText}
-                {showBioToggle ? (
-                  <button
-                    type="button"
-                    onClick={() => setBioExpanded((e) => !e)}
-                    className="ml-1 font-semibold text-primary hover:underline"
-                  >
-                    {bioExpanded ? "Mostrar menos" : "Ler mais"}
-                  </button>
-                ) : null}
-              </p>
+              {editingInfoField === "bio" ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={editingInfoValue}
+                    onChange={(e) => setEditingInfoValue(e.target.value)}
+                    rows={4}
+                    autoFocus
+                    placeholder="Fale sobre o seu trabalho e experiência…"
+                  />
+                  <ProfileInlineFieldActions
+                    saving={savingProfile}
+                    onSave={() => void handleSaveInfoField()}
+                    onCancel={handleCancelInfoField}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {bioText}
+                  {showBioToggle ? (
+                    <button
+                      type="button"
+                      onClick={() => setBioExpanded((e) => !e)}
+                      className="ml-1 font-semibold text-primary hover:underline"
+                    >
+                      {bioExpanded ? "Mostrar menos" : "Ler mais"}
+                    </button>
+                  ) : null}
+                </p>
+              )}
             </Card>
 
             <Card>
@@ -1763,28 +1826,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         placeholder="Selecione a província"
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{locationLabel}</p>
@@ -1813,28 +1859,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{profileTypeLabel}</p>
@@ -1863,28 +1892,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{objectiveLabel}</p>
@@ -1914,28 +1926,11 @@ export default function PerfilPage() {
                         autoFocus
                         placeholder="999999, 888888"
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{phoneLabel}</p>
@@ -1964,28 +1959,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{gradeLabel}</p>
@@ -2014,28 +1992,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{nationalityLabel}</p>
@@ -2064,28 +2025,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{cityLabel}</p>
@@ -2114,28 +2058,11 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         autoFocus
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground">{interestLabel}</p>
@@ -2165,28 +2092,11 @@ export default function PerfilPage() {
                         autoFocus
                         placeholder="https://..."
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : socialLinkHref ? (
                     <a
@@ -2247,28 +2157,11 @@ export default function PerfilPage() {
                         autoFocus
                         placeholder="site1.com, site2.com"
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="buy"
-                          className="h-8 min-h-8 shrink-0 rounded-lg px-3 py-0 text-xs font-semibold shadow-none"
-                          onClick={handleSaveInfoField}
-                          disabled={savingProfile}
-                        >
-                          {savingProfile ? "A guardar…" : "Guardar"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          className="h-8 min-h-8 shrink-0 rounded-lg border border-border/60 bg-secondary px-3 py-0 text-xs font-semibold text-muted-foreground shadow-none hover:bg-accent hover:text-foreground"
-                          onClick={handleCancelInfoField}
-                          disabled={savingProfile}
-                        >
-                          Cancelar
-                        </Button>
-                      </div>
+                      <ProfileInlineFieldActions
+                        saving={savingProfile}
+                        onSave={() => void handleSaveInfoField()}
+                        onCancel={handleCancelInfoField}
+                      />
                     </div>
                   ) : (
                     <p className="mt-1 text-sm font-medium text-foreground break-all">{webUrlLabel}</p>
@@ -2626,8 +2519,8 @@ export default function PerfilPage() {
                   <Button
                     type="button"
                     variant="buy"
-                    size="sm"
-                    className="text-xs font-bold"
+                    size="xs"
+                    className="rounded-lg text-xs font-semibold shadow-none"
                     onClick={openCreateServiceModal}
                   >
                     Cadastrar serviço
@@ -2642,7 +2535,7 @@ export default function PerfilPage() {
                     </select>
                     <button
                       type="button"
-                      className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                     >
                       Adicionar
                     </button>
@@ -2789,7 +2682,8 @@ export default function PerfilPage() {
                     <Button
                       type="button"
                       variant="buy"
-                      className="mt-6"
+                      size="sm"
+                      className="mt-6 h-9 min-h-9 rounded-lg px-4 text-xs font-semibold shadow-none"
                       onClick={openCreateServiceModal}
                     >
                       Cadastrar serviço
@@ -2871,11 +2765,11 @@ export default function PerfilPage() {
       />
 
       <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
-        <DialogContent className="border-border/45 shadow-none sm:max-w-4xl">
+        <DialogContent className="border-border/45 shadow-none sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Editar perfil</DialogTitle>
             <DialogDescription>
-              Atualize os dados do perfil pessoal e os contactos.
+              Atualize o nome do seu perfil.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -2888,170 +2782,16 @@ export default function PerfilPage() {
                   setProfileForm((f) => ({ ...f, name: e.target.value }))
                 }
                 autoComplete="name"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-bio">Biografia</Label>
-              <Textarea
-                id="profile-bio"
-                value={profileForm.bio}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, bio: e.target.value }))
-                }
-                rows={4}
-                placeholder="Fale sobre o seu trabalho e experiência…"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-location">Província</Label>
-              <ProvinceSelect
-                id="profile-location"
-                value={profileForm.location}
-                onChange={(location) =>
-                  setProfileForm((f) => ({ ...f, location }))
-                }
-                placeholder="Selecione a província"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-type">Tipo de perfil</Label>
-              <Input
-                id="profile-type"
-                value={profileForm.profile_type}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, profile_type: e.target.value }))
-                }
-                placeholder="pessoal"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-objective">Objetivo</Label>
-              <Input
-                id="profile-objective"
-                value={profileForm.objective}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, objective: e.target.value }))
-                }
-                placeholder="Descreva o objetivo"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-phone">Telefone</Label>
-              <Input
-                id="profile-phone"
-                value={profileForm.phone}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, phone: e.target.value }))
-                }
-                placeholder="9999999, 999999"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-birth-date">Data de nascimento</Label>
-              <Input
-                id="profile-birth-date"
-                type="date"
-                value={profileForm.birth_date}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, birth_date: e.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-grade">Grau</Label>
-              <Input
-                id="profile-grade"
-                value={profileForm.grade}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, grade: e.target.value }))
-                }
-                placeholder="Ex.: Sénior"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-nationality">Nacionalidade</Label>
-              <Input
-                id="profile-nationality"
-                value={profileForm.nationality}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, nationality: e.target.value }))
-                }
-                placeholder="Angola"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-city">Município</Label>
-              <Input
-                id="profile-city"
-                value={profileForm.city}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, city: e.target.value }))
-                }
-                placeholder="Luanda"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-interest">Interesse</Label>
-              <Input
-                id="profile-interest"
-                value={profileForm.interest}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, interest: e.target.value }))
-                }
-                placeholder="Área de interesse"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-social-link">Link social</Label>
-              <Input
-                id="profile-social-link"
-                value={profileForm.social_link}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, social_link: e.target.value }))
-                }
-                placeholder="https://..."
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-web-url">Web URLs (separados por vírgula)</Label>
-              <Input
-                id="profile-web-url"
-                value={profileForm.web_url}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, web_url: e.target.value }))
-                }
-                placeholder="site1.com, site2.com"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-cover-image">Imagem de capa (URL)</Label>
-              <Input
-                id="profile-cover-image"
-                type="url"
-                value={profileForm.cove_image}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, cove_image: e.target.value }))
-                }
-                placeholder="https://..."
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-avatar">URL do avatar</Label>
-              <Input
-                id="profile-avatar"
-                type="url"
-                value={profileForm.avatar}
-                onChange={(e) =>
-                  setProfileForm((f) => ({ ...f, avatar: e.target.value }))
-                }
-                placeholder="https://…"
+                autoFocus
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:justify-end">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
+              className="h-9 min-h-9 rounded-lg px-4 text-xs font-semibold shadow-none"
               onClick={() => setEditProfileOpen(false)}
               disabled={savingProfile}
             >
@@ -3060,6 +2800,8 @@ export default function PerfilPage() {
             <Button
               type="button"
               variant="buy"
+              size="sm"
+              className="h-9 min-h-9 rounded-lg px-4 text-xs font-semibold shadow-none"
               onClick={handleSaveProfile}
               disabled={savingProfile}
             >
