@@ -9,14 +9,17 @@ interface HomeFindProfessionalCardProps {
   variant?: "sidebar" | "banner"
   className?: string
   onNavigate?: () => void
+  ctaLabel?: string
 }
 
 export function HomeFindProfessionalCard({
   variant = "sidebar",
   className,
   onNavigate,
+  ctaLabel,
 }: HomeFindProfessionalCardProps) {
   if (variant === "banner") {
+    const buttonLabel = ctaLabel ?? "Ver categorias"
     return (
       <Link
         href="/categoria-profissional"
@@ -43,7 +46,7 @@ export function HomeFindProfessionalCard({
           className="inline-flex w-full shrink-0 items-center justify-center gap-1 rounded-lg px-3 py-2.5 text-xs font-medium text-white transition-opacity group-hover:opacity-90 sm:w-auto"
           style={{ backgroundColor: lightTheme.colors.primary }}
         >
-          Ver categorias
+          {buttonLabel}
           <ArrowRight className="size-3.5" aria-hidden />
         </span>
       </Link>
