@@ -1,6 +1,8 @@
 "use client"
 
 import { useAuth } from "@/lib/use-auth"
+import { HomeSidebarMetrics } from "@/components/home/home-sidebar-metrics"
+import { useAccountRole, type AccountRole } from "@/lib/use-account-role"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
@@ -12,7 +14,6 @@ import {
   Share2,
   Pencil,
   FileText,
-  ChevronDown,
   MessageSquare,
   UserRound,
   Goal,
@@ -69,6 +70,7 @@ import {
 import { extractUserId } from "@/lib/profile-user-id"
 import {
   extractProfileUserId,
+  extractProfessionalId,
   mapProfileApiToPerfilInfo,
   mapProfileApiToPerfilUser,
   unwrapProfilePayload,
@@ -85,6 +87,11 @@ import { MyServiceCard } from "@/components/itemprofileservice/my-service-card"
 import { fetchMyMarketplaceServices } from "@/lib/marketplace-client"
 import { deleteService, toggleService } from "@/lib/services-client"
 import { isProfessionalUser } from "@/lib/is-professional-user"
+import {
+  resolveProfessionalIdForUser,
+  updateProfessionalAvatarUrl,
+  uploadProfessionalAvatarFile,
+} from "@/lib/professionals-client"
 import type { MarketplaceService } from "@/types/marketplace"
 
 interface PerfilUser {
@@ -572,11 +579,13 @@ function ProfileInlineFieldActions({
 
 export default function PerfilPage() {
   const { user, isAuthenticated, isLoading } = useAuth()
+  const { role: accountRole } = useAccountRole()
   const router = useRouter()
   const toast = useToast()
 
   const [perfilUser, setPerfilUser] = useState<PerfilUser | null>(null)
   const [perfilInfo, setPerfilInfo] = useState<PerfilInfo | null>(null)
+  const [professionalId, setProfessionalId] = useState<string | null>(null)
   const [isPerfilLoading, setIsPerfilLoading] = useState(false)
   const [careerTab, setCareerTab] = useState(0)
   const [bioExpanded, setBioExpanded] = useState(false)
@@ -828,7 +837,39 @@ export default function PerfilPage() {
       cove_image: perfilInfo?.cove_image ?? "",
       location: province,
     }
-  }, [perfilUser, perfilInfo, user])
+  }, [perfilInfo, perfilUser, user])
+
+  const refreshProfileSnapshot = useCallback(
+    async (token: string, userId: string | null) => {
+      const profileOutcome = await fetchProfile(token, userId)
+      if (!profileOutcome.success) return null
+
+      const apiProfile = unwrapProfilePayload(profileOutcome.data)
+      if (!apiProfile) return null
+
+      try {
+        const mapped = mapProfileApiToPerfilUser(apiProfile)
+        setProfessionalId(extractProfessionalId(apiProfile))
+        setPerfilUser((prev) => ({
+          ...(prev ?? {}),
+          ...mapped,
+        }))
+        setPerfilInfo((prev) => ({
+          ...(prev ?? {}),
+          ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
+        }))
+        syncUserDataInSession({
+          id: mapped.id,
+          name: mapped.name,
+          avatar: mapped.avatar,
+        })
+        return mapped.avatar ?? null
+      } catch {
+        return null
+      }
+    },
+    []
+  )
 
   const openEditProfile = useCallback(() => {
     setProfileForm(buildProfileFormState())
@@ -900,13 +941,29 @@ export default function PerfilPage() {
 
         const avatarUrl = formData.avatar.trim()
         if (avatarUrl && !avatarUrl.startsWith("data:")) {
-          const avatarUpdate = await updateProfileAvatar(token, {
-            user_id: userId,
-            avatarUrl,
-          })
-          if (!avatarUpdate.success) {
-            toast.error(avatarUpdate.error)
-            return false
+          const isProfessionalAccount =
+            accountRole === "professional" ||
+            isProfessionalUser(perfilInfo?.profile_type)
+
+          if (isProfessionalAccount && professionalId) {
+            const avatarUpdate = await updateProfessionalAvatarUrl(
+              professionalId,
+              token,
+              avatarUrl
+            )
+            if (!avatarUpdate.success) {
+              toast.error(avatarUpdate.error)
+              return false
+            }
+          } else {
+            const avatarUpdate = await updateProfileAvatar(token, {
+              user_id: userId,
+              avatarUrl,
+            })
+            if (!avatarUpdate.success) {
+              toast.error(avatarUpdate.error)
+              return false
+            }
           }
         }
 
@@ -1036,7 +1093,7 @@ export default function PerfilPage() {
         setSavingProfile(false)
       }
     },
-    [perfilInfo, profileUserId, router, toast]
+    [accountRole, perfilInfo, professionalId, profileUserId, router, toast]
   )
 
   const handleSaveProfile = useCallback(async () => {
@@ -1177,28 +1234,100 @@ export default function PerfilPage() {
         }
         syncUserDataInSession({ id: userId })
 
-        const upload = await uploadMediaToCloudinary(file, token)
-        if (!upload.success) {
-          toast.error(upload.error)
-          setAvatarPreviewSrc("")
-          return
+        const isProfessionalAccount =
+          accountRole === "professional" ||
+          isProfessionalUser(perfilInfo?.profile_type)
+
+        let resolvedProfessionalId = professionalId
+        if (isProfessionalAccount && !resolvedProfessionalId) {
+          resolvedProfessionalId = await resolveProfessionalIdForUser(
+            token,
+            userId
+          )
+          if (resolvedProfessionalId) {
+            setProfessionalId(resolvedProfessionalId)
+          }
         }
 
-        const avatarUpdate = await updateProfileAvatar(token, {
-          user_id: userId,
-          avatarUrl: upload.data.url,
-        })
-        if (!avatarUpdate.success) {
-          toast.error(avatarUpdate.error)
+        let avatarUrl: string | null = null
+
+        if (isProfessionalAccount) {
+          if (!resolvedProfessionalId) {
+            toast.error(
+              "Não foi possível identificar o perfil profissional para atualizar a foto."
+            )
+            setAvatarPreviewSrc("")
+            return
+          }
+
+          const directUpload = await uploadProfessionalAvatarFile(
+            resolvedProfessionalId,
+            file,
+            token
+          )
+
+          if (directUpload.success) {
+            avatarUrl = directUpload.data.url
+          } else {
+            const upload = await uploadMediaToCloudinary(file, token)
+            if (!upload.success) {
+              toast.error(directUpload.error)
+              setAvatarPreviewSrc("")
+              return
+            }
+
+            const professionalAvatarUpdate = await updateProfessionalAvatarUrl(
+              resolvedProfessionalId,
+              token,
+              upload.data.url
+            )
+            if (!professionalAvatarUpdate.success) {
+              toast.error(professionalAvatarUpdate.error)
+              setAvatarPreviewSrc("")
+              return
+            }
+            avatarUrl = professionalAvatarUpdate.data.url
+          }
+
+          const refreshedUrl = await refreshProfileSnapshot(token, userId)
+          if (refreshedUrl) {
+            avatarUrl = refreshedUrl
+            setAvatarPreviewSrc("")
+          } else if (avatarUrl) {
+            setPerfilUser((prev) => ({
+              ...(prev ?? {}),
+              avatar: avatarUrl ?? undefined,
+            }))
+            syncUserDataInSession({ id: userId, avatar: avatarUrl ?? undefined })
+            setAvatarPreviewSrc("")
+          }
+        } else {
+          const upload = await uploadMediaToCloudinary(file, token)
+          if (!upload.success) {
+            toast.error(upload.error)
+            setAvatarPreviewSrc("")
+            return
+          }
+
+          const avatarUpdate = await updateProfileAvatar(token, {
+            user_id: userId,
+            avatarUrl: upload.data.url,
+          })
+          if (!avatarUpdate.success) {
+            toast.error(avatarUpdate.error)
+            setAvatarPreviewSrc("")
+            return
+          }
+          avatarUrl = upload.data.url
+
+          setPerfilUser((prev) => ({
+            ...(prev ?? {}),
+            avatar: avatarUrl ?? undefined,
+          }))
+          syncUserDataInSession({ id: userId, avatar: avatarUrl ?? undefined })
           setAvatarPreviewSrc("")
-          return
         }
 
-        setPerfilUser((prev) => ({
-          ...(prev ?? {}),
-          avatar: upload.data.url,
-        }))
-        syncUserDataInSession({ id: userId, avatar: upload.data.url })
         toast.success("Foto de perfil atualizada.")
       } catch (err) {
         toast.error(
@@ -1208,7 +1337,14 @@ export default function PerfilPage() {
         setAvatarUploading(false)
       }
     },
-    [profileUserId, toast]
+    [
+      accountRole,
+      perfilInfo?.profile_type,
+      professionalId,
+      profileUserId,
+      refreshProfileSnapshot,
+      toast,
+    ]
   )
 
   const openAvatarFilePicker = useCallback(() => {
@@ -1252,6 +1388,7 @@ export default function PerfilPage() {
         if (!cancelled && apiProfile) {
           try {
             const mapped = mapProfileApiToPerfilUser(apiProfile)
+            setProfessionalId(extractProfessionalId(apiProfile))
             setPerfilUser((prev) => ({
               ...(prev ?? {}),
               ...mapped,
@@ -1486,6 +1623,8 @@ export default function PerfilPage() {
     "Província não definida"
   const profileTypeLabel = perfilInfo?.profile_type?.trim() || "Não definido"
   const isProfessional = isProfessionalUser(perfilInfo?.profile_type)
+  const metricsRole: AccountRole =
+    accountRole ?? (isProfessional ? "professional" : "client")
   const careerTabs = getCareerTabs(isProfessional)
   const servicesTabIndex = careerTabs.indexOf("Serviços")
   const objectiveLabel = perfilInfo?.objective?.trim() || "Não definido"
@@ -1524,47 +1663,7 @@ export default function PerfilPage() {
       <div className="mx-auto grid grid-cols-1 gap-6 p-4 lg:grid-cols-12">
           {/* Sidebar esquerda — abaixo no mobile, à esquerda no desktop */}
           <aside className="order-2 space-y-6 lg:order-1 lg:col-span-3">
-
-            <Card>
-              <div className="mb-3 border-b border-border/40 pb-3">
-                <h3 className="text-base font-semibold text-foreground">
-                  Actividades
-                </h3>
-              </div>
-              <div className="flex flex-col items-center py-6 text-muted-foreground">
-                <FileText
-                  size={40}
-                  strokeWidth={1}
-                  className="mb-2 opacity-20"
-                />
-                <p className="text-xs">Nenhuma publicação ainda</p>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="mb-3 flex items-center justify-between border-b border-border/40 pb-3">
-                <h3 className="text-base font-semibold text-foreground">
-                  Ferramentas
-                </h3>
-                <Link href="/configuracoes" aria-label="Editar ferramentas">
-                  <Pencil size={14} className="text-muted-foreground hover:text-foreground" />
-                </Link>
-              </div>
-              <div className="space-y-2">
-                <div className="flex flex-wrap gap-2">
-                  <Badge color="blue">Github</Badge>
-                  <Badge color="yellow">Javascript</Badge>
-                  <Badge color="violet">Node.Js</Badge>
-                  <Badge color="sky">React Native</Badge>
-                </div>
-                <button
-                  type="button"
-                  className="mt-4 w-full rounded-lg border border-primary/12 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-                >
-                  Ver mais <ChevronDown size={14} className="inline" />
-                </button>
-              </div>
-            </Card>
+            <HomeSidebarMetrics role={metricsRole} userId={profileUserId} />
 
             <Card>
               <div className="mb-3 border-b border-border/40 pb-3">
