@@ -253,3 +253,43 @@ export async function registerWithCredentials(
     data: normalizeRegisterResponse(rawData),
   }
 }
+
+export type ForgotPasswordOutcome =
+  | { success: true; message?: string }
+  | { success: false; error: string; statusCode?: number }
+
+/** POST /auth/forgot-password — envia código para o e-mail (recuperação de senha). */
+export async function requestForgotPassword(
+  email: string
+): Promise<ForgotPasswordOutcome> {
+  const trimmed = email.trim()
+  if (!trimmed) {
+    return { success: false, error: "Informe o e-mail.", statusCode: 400 }
+  }
+
+  const res = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: trimmed }),
+  })
+
+  const raw = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    const message =
+      "message" in raw && typeof raw.message === "string"
+        ? raw.message
+        : "Não foi possível enviar o código. Tente novamente."
+    return { success: false, error: message, statusCode: res.status }
+  }
+
+  const message =
+    raw &&
+    typeof raw === "object" &&
+    "message" in raw &&
+    typeof (raw as { message?: string }).message === "string"
+      ? (raw as { message: string }).message
+      : undefined
+
+  return { success: true, message }
+}

@@ -106,6 +106,11 @@ export interface ProfileStatsRequest {
   user_id: string
 }
 
+/** Payload para pedido de código de recuperação de senha (POST /auth/forgot-password) */
+export interface ForgotPasswordRequest {
+  email: string
+}
+
 /** Erro padrão retornado pela API */
 export interface ApiErrorResponse {
   message: string
