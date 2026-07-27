@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useToast } from "@/components/ui/toaster"
+import { toast } from "@/components/ui/toaster"
 import { lightTheme } from "@/style/light"
 import { requestForgotPassword } from "@/lib/auth-client"
 
@@ -25,7 +25,6 @@ const authFieldClass =
 
 export function ItemSendPhone() {
   const router = useRouter()
-  const toast = useToast()
   const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
@@ -60,7 +59,7 @@ export function ItemSendPhone() {
         setIsLoading(false)
       }
     },
-    [email, router, toast]
+    [email, router]
   )
 
   return (

@@ -111,6 +111,20 @@ export interface ForgotPasswordRequest {
   email: string
 }
 
+/** Payload para renovar o access token (POST /auth/refresh-token) */
+export interface RefreshTokenRequest {
+  /** Refresh token — obrigatório */
+  refreshToken: string
+}
+
+/** Resposta esperada de POST /auth/refresh-token */
+export interface RefreshTokenResponse {
+  token?: string
+  accessToken?: string
+  refreshToken?: string
+  message?: string
+}
+
 /** Erro padrão retornado pela API */
 export interface ApiErrorResponse {
   message: string
