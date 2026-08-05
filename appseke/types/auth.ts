@@ -106,6 +106,20 @@ export interface ProfileStatsRequest {
   user_id: string
 }
 
+/** Resposta de GET /profile/stats */
+export interface ProfileStats {
+  member_since: string | null
+  total_roles: number
+  is_verified: boolean
+  profile_completion: number
+}
+
+/** Avaliações do professional (GET /profile → professional) */
+export interface ProfileRatingSummary {
+  rating_avg: number
+  total_reviews: number
+}
+
 /** Payload para pedido de código de recuperação de senha (POST /auth/forgot-password) */
 export interface ForgotPasswordRequest {
   email: string

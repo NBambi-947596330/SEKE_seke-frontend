@@ -13,7 +13,6 @@ import {
   BarChart2,
   Share2,
   Pencil,
-  FileText,
   MessageSquare,
   UserRound,
   Goal,
@@ -32,11 +31,12 @@ import {
   MessageCircle,
   Music2,
   Loader2,
-  Activity,
-  Play,
   Check,
   X,
   RefreshCw,
+  Star,
+  BadgeCheck,
+  CalendarDays,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -59,15 +59,18 @@ import {
   NetworkListSkeleton,
   ProfileLayoutSkeleton,
 } from "@/components/profile/profile-layout-skeleton"
-import { fetchAllMyPosts, uploadMediaToCloudinary } from "@/lib/posts-client"
+import { uploadMediaToCloudinary } from "@/lib/posts-client"
 import {
   buildUpdateProfilePayload,
+  extractRatingFromProfile,
   fetchProfile,
+  fetchProfileStats,
   resolveProfileUserId,
   updateProfile,
   updateProfileAvatar,
   updateProfileLocation,
 } from "@/lib/profile-client"
+import type { ProfileRatingSummary, ProfileStats } from "@/types/auth"
 import { getClientGeolocation, type GeoCoords } from "@/lib/geolocation"
 import { extractUserId } from "@/lib/profile-user-id"
 import {
@@ -77,8 +80,6 @@ import {
   mapProfileApiToPerfilUser,
   unwrapProfilePayload,
 } from "@/lib/profile-map"
-import type { MyPostSummary, MyPostsPagination } from "@/types/post"
-import { DraftFinalizeModal } from "@/components/draft-finalize-modal/draft-finalize-modal"
 import { ProvinceSelect } from "@/components/province-select/province-select"
 import { DeleteServiceConfirmDialog } from "@/components/delete-service-confirm-dialog/delete-service-confirm-dialog"
 import {
@@ -94,6 +95,12 @@ import {
   updateProfessionalAvatarUrl,
   uploadProfessionalAvatarFile,
 } from "@/lib/professionals-client"
+import {
+  extractProfessionalProfileFields,
+  fetchProfessionalProfile,
+  formatHourlyRateInput,
+  updateProfessionalProfile,
+} from "@/lib/professional-client"
 import type { MarketplaceService } from "@/types/marketplace"
 
 interface PerfilUser {
@@ -417,14 +424,7 @@ function Badge({
   )
 }
 
-const CAREER_TABS = [
-  "Seguidores",
-  "A seguir",
-  "Experiência",
-  "Empresas",
-  "Projetos",
-  "Certificados",
-] as const
+const CAREER_TABS = ["Seguidores", "A seguir", "Experiência"] as const
 
 function getCareerTabs(isProfessional: boolean): readonly string[] {
   if (isProfessional) {
@@ -433,9 +433,7 @@ function getCareerTabs(isProfessional: boolean): readonly string[] {
       "A seguir",
       "Serviços",
       "Experiência",
-      "Empresas",
-      "Projetos",
-      "Certificados",
+      "Disponibilidade e Valores",
     ]
   }
   return CAREER_TABS
@@ -470,72 +468,6 @@ function parseNetworkList(
   }
   const total = typeof o.total === "number" ? o.total : items.length
   return { items, total }
-}
-
-type MidiaSlot = {
-  kind: "image" | "video" | "other"
-  url: string | null
-  /** Texto associado (URL ou descrição quando não é URL) */
-  label: string
-}
-
-function isLikelyMediaUrl(raw: string): boolean {
-  const s = raw.trim()
-  if (!s) return false
-  if (/^https?:\/\//i.test(s)) return true
-  if (s.startsWith("data:")) return true
-  if (s.startsWith("//")) return true
-  return false
-}
-
-/** Pares consecutivos `[tipo, url|texto]` como na API (`midia`). */
-function parsePostMidiaSlots(midia?: string[]): MidiaSlot[] {
-  if (!midia?.length) return []
-  const slots: MidiaSlot[] = []
-  for (let i = 0; i + 1 < midia.length; i += 2) {
-    const rawKind = (midia[i] ?? "").toLowerCase()
-    const label = typeof midia[i + 1] === "string" ? midia[i + 1].trim() : ""
-    const kind: MidiaSlot["kind"] =
-      rawKind === "image"
-        ? "image"
-        : rawKind === "video"
-          ? "video"
-          : "other"
-    const url = label && isLikelyMediaUrl(label) ? label : null
-    slots.push({
-      kind,
-      url,
-      label: label || "Mídia",
-    })
-  }
-  return slots
-}
-
-function formatActivityDate(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  try {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return "—"
-    return d.toLocaleDateString("pt-AO", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
-  } catch {
-    return "—"
-  }
-}
-
-function truncateActivityText(text: string, max: number): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return `${t.slice(0, max).trim()}…`
-}
-
-function activityStatusLabel(status: string | undefined): string {
-  if (status === "published") return "Publicado"
-  if (status === "draft") return "Rascunho"
-  return status?.trim() ? status : "—"
 }
 
 function ProfileInlineFieldActions({
@@ -588,6 +520,10 @@ export default function PerfilPage() {
   const [perfilUser, setPerfilUser] = useState<PerfilUser | null>(null)
   const [perfilInfo, setPerfilInfo] = useState<PerfilInfo | null>(null)
   const [professionalId, setProfessionalId] = useState<string | null>(null)
+  const [hourlyRateInput, setHourlyRateInput] = useState("")
+  const [isAvailableForWork, setIsAvailableForWork] = useState(true)
+  const [savingAvailability, setSavingAvailability] = useState(false)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
   const [isPerfilLoading, setIsPerfilLoading] = useState(false)
   const [careerTab, setCareerTab] = useState(0)
   const [bioExpanded, setBioExpanded] = useState(false)
@@ -642,16 +578,11 @@ export default function PerfilPage() {
   const [followersTotal, setFollowersTotal] = useState(0)
   const [followingTotal, setFollowingTotal] = useState(0)
   const [networkLoading, setNetworkLoading] = useState(false)
+  const [profileStats, setProfileStats] = useState<ProfileStats | null>(null)
+  const [profileStatsLoading, setProfileStatsLoading] = useState(false)
+  const [profileRating, setProfileRating] =
+    useState<ProfileRatingSummary | null>(null)
 
-  const [myPosts, setMyPosts] = useState<MyPostSummary[]>([])
-  const [myPostsLoading, setMyPostsLoading] = useState(false)
-  const [myPostsError, setMyPostsError] = useState<string | null>(null)
-  const [myPostsPagination, setMyPostsPagination] =
-    useState<MyPostsPagination | null>(null)
-  const [draftModalOpen, setDraftModalOpen] = useState(false)
-  const [draftModalPost, setDraftModalPost] = useState<MyPostSummary | null>(
-    null
-  )
   const [serviceModalOpen, setServiceModalOpen] = useState(false)
   const [editingService, setEditingService] = useState<MarketplaceService | null>(null)
   const [myServices, setMyServices] = useState<MarketplaceService[]>([])
@@ -864,6 +795,11 @@ export default function PerfilPage() {
           ...(prev ?? {}),
           ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
         }))
+        const proFields = extractProfessionalProfileFields(apiProfile)
+        if (proFields) {
+          setHourlyRateInput(formatHourlyRateInput(proFields.hourly_rate))
+          setIsAvailableForWork(proFields.is_available)
+        }
         syncUserDataInSession({
           id: mapped.id,
           name: mapped.name,
@@ -876,6 +812,61 @@ export default function PerfilPage() {
     },
     []
   )
+
+  const handleSaveAvailability = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const token = window.sessionStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Sessão inválida. Inicie sessão novamente.")
+      return
+    }
+
+    const userId = await resolveProfileUserId(token, profileUserId)
+    if (!userId) {
+      toast.error("Não foi possível obter o ID do utilizador.")
+      return
+    }
+
+    const rate = Number(hourlyRateInput.replace(",", "."))
+    if (!Number.isFinite(rate) || rate < 0) {
+      toast.error("Informe uma tarifa horária válida.")
+      return
+    }
+
+    setSavingAvailability(true)
+    try {
+      const outcome = await updateProfessionalProfile(
+        {
+          user_id: userId,
+          hourly_rate: rate,
+          is_available: isAvailableForWork,
+        },
+        token
+      )
+      if (!outcome.success) {
+        toast.error(outcome.error)
+        return
+      }
+      toast.success("Disponibilidade e valores actualizados.")
+      const refreshed = await fetchProfessionalProfile(token, userId)
+      if (refreshed.success) {
+        setHourlyRateInput(formatHourlyRateInput(refreshed.fields.hourly_rate))
+        setIsAvailableForWork(refreshed.fields.is_available)
+      } else {
+        await refreshProfileSnapshot(token, userId)
+      }
+    } catch {
+      toast.error("Erro de ligação ao guardar.")
+    } finally {
+      setSavingAvailability(false)
+    }
+  }, [
+    hourlyRateInput,
+    isAvailableForWork,
+    profileUserId,
+    refreshProfileSnapshot,
+    toast,
+  ])
 
   const openEditProfile = useCallback(() => {
     setProfileForm(buildProfileFormState())
@@ -1505,6 +1496,15 @@ export default function PerfilPage() {
               ...(prev ?? {}),
               ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
             }))
+            const ratingFromProfile = extractRatingFromProfile(apiProfile)
+            if (ratingFromProfile) {
+              setProfileRating(ratingFromProfile)
+            }
+            const proFields = extractProfessionalProfileFields(apiProfile)
+            if (proFields) {
+              setHourlyRateInput(formatHourlyRateInput(proFields.hourly_rate))
+              setIsAvailableForWork(proFields.is_available)
+            }
             syncUserDataInSession({
               id: mapped.id,
               name: mapped.name,
@@ -1624,55 +1624,69 @@ export default function PerfilPage() {
   }, [profileUserId, isAuthenticated])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated || !profileUserId) return
+    if (!isProfessionalUser(perfilInfo?.profile_type)) return
+    if (typeof window === "undefined") return
+
+    const token = window.sessionStorage.getItem("auth_token")
+    if (!token) return
+
     let cancelled = false
-    setMyPostsLoading(true)
-    setMyPostsError(null)
+    setAvailabilityLoading(true)
 
-    const load = async () => {
-      const token =
-        typeof window !== "undefined"
-          ? window.sessionStorage.getItem("auth_token")
-          : null
-      if (!token) {
-        if (!cancelled) {
-          setMyPosts([])
-          setMyPostsPagination(null)
-          setMyPostsLoading(false)
-          setMyPostsError(null)
-        }
-        return
-      }
+    const loadProfessionalProfile = async () => {
+      try {
+        const outcome = await fetchProfessionalProfile(token, profileUserId)
+        if (cancelled) return
+        if (!outcome.success) return
 
-      const outcome = await fetchAllMyPosts(token)
-      if (cancelled) return
-      if (outcome.success) {
-        setMyPosts(outcome.data)
-        setMyPostsPagination(outcome.pagination ?? null)
-      } else {
-        setMyPosts([])
-        setMyPostsPagination(null)
-        setMyPostsError(outcome.error)
+        setHourlyRateInput(formatHourlyRateInput(outcome.fields.hourly_rate))
+        setIsAvailableForWork(outcome.fields.is_available)
+      } finally {
+        if (!cancelled) setAvailabilityLoading(false)
       }
-      setMyPostsLoading(false)
     }
 
-    void load()
+    void loadProfessionalProfile()
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, profileUserId, perfilInfo?.profile_type])
 
-  const refreshMyPosts = useCallback(async () => {
+  useEffect(() => {
+    if (!profileUserId || !isAuthenticated) return
     if (typeof window === "undefined") return
+
+    let cancelled = false
     const token = window.sessionStorage.getItem("auth_token")
     if (!token) return
-    const refresh = await fetchAllMyPosts(token)
-    if (refresh.success) {
-      setMyPosts(refresh.data)
-      setMyPostsPagination(refresh.pagination ?? null)
+
+    setProfileStatsLoading(true)
+
+    const loadStats = async () => {
+      try {
+        const outcome = await fetchProfileStats(token, profileUserId)
+        if (cancelled) return
+
+        if (outcome.success) {
+          setProfileStats(outcome.data)
+          if (outcome.data.member_since) {
+            setPerfilInfo((prev) => ({
+              ...(prev ?? {}),
+              member_since: outcome.data.member_since ?? prev?.member_since,
+            }))
+          }
+        }
+      } finally {
+        if (!cancelled) setProfileStatsLoading(false)
+      }
     }
-  }, [])
+
+    void loadStats()
+    return () => {
+      cancelled = true
+    }
+  }, [profileUserId, isAuthenticated])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1725,6 +1739,27 @@ export default function PerfilPage() {
         ? rawBio
         : `${rawBio.slice(0, bioPreviewLen).trim()}…`
 
+  const ratingAvg = profileRating?.rating_avg ?? 0
+  const totalReviews = profileRating?.total_reviews ?? 0
+  const roundedStars = Math.round(ratingAvg)
+  const profileCompletion = profileStats?.profile_completion ?? 0
+  const totalRoles = profileStats?.total_roles ?? 0
+  const isProfileVerified = profileStats?.is_verified === true
+  const memberSinceLabel = (() => {
+    const raw =
+      profileStats?.member_since?.trim() ||
+      perfilInfo?.member_since?.trim() ||
+      ""
+    if (!raw) return "—"
+    const date = new Date(raw)
+    if (Number.isNaN(date.getTime())) return "—"
+    return date.toLocaleDateString("pt-PT", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  })()
+
   const locationLabel =
     perfilInfo?.province?.trim() ||
     perfilInfo?.location?.trim() ||
@@ -1735,6 +1770,10 @@ export default function PerfilPage() {
     accountRole ?? (isProfessional ? "professional" : "client")
   const careerTabs = getCareerTabs(isProfessional)
   const servicesTabIndex = careerTabs.indexOf("Serviços")
+  const experienceTabIndex = careerTabs.indexOf("Experiência")
+  const availabilityTabIndex = careerTabs.indexOf(
+    "Disponibilidade e Valores"
+  )
   const objectiveLabel = perfilInfo?.objective?.trim() || "Não definido"
   const phoneLabel =
     typeof perfilInfo?.phone === "string" && perfilInfo.phone.trim()
@@ -1913,8 +1952,6 @@ export default function PerfilPage() {
                       </span>
                     </div>
                   </div>
-
-                  
                 </div>
               </div>
             </div>
@@ -1927,35 +1964,56 @@ export default function PerfilPage() {
                 <div>
                   <div className="flex flex-col items-start gap-8 sm:flex-row">
                     <div className="text-center">
-                    <p className="mb-1 text-5xl font-black">0.0</p>
-                    <div className="flex gap-0.5 text-border/55">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <span key={s}>★</span>
-                      ))}
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">0 avaliações</p>
+                      <p className="mb-1 text-5xl font-black tabular-nums">
+                        {ratingAvg.toFixed(1)}
+                      </p>
+                      <div className="flex justify-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            size={16}
+                            className={
+                              s <= roundedStars
+                                ? "fill-amber-400 text-amber-400"
+                                : "fill-transparent text-border/55"
+                            }
+                            aria-hidden
+                          />
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {totalReviews}{" "}
+                        {totalReviews === 1 ? "avaliação" : "avaliações"}
+                      </p>
                     </div>
                     <div className="w-full flex-1 space-y-1">
-                    {[5, 4, 3, 2, 1].map((num) => (
-                      <div
-                        key={num}
-                        className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground"
-                      >
-                        <span>{num}</span>
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full w-0 bg-primary" />
+                      {[5, 4, 3, 2, 1].map((num) => (
+                        <div
+                          key={num}
+                          className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground"
+                        >
+                          <span>{num}</span>
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full w-0 bg-primary" />
+                          </div>
+                          <span>0</span>
                         </div>
-                        <span>0</span>
-                      </div>
-                    ))}
+                      ))}
                     </div>
                   </div>
                 </div>
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-muted opacity-50">
-                    <MessageSquare size={32} className="text-muted-foreground" />
+                    <MessageSquare
+                      size={32}
+                      className="text-muted-foreground"
+                    />
                   </div>
-                  <p className="text-sm font-semibold text-muted-foreground">Sem avaliações</p>
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    {totalReviews > 0
+                      ? "Avaliações dos clientes"
+                      : "Sem avaliações ainda"}
+                  </p>
                 </div>
               </div>
             </Card>
@@ -2440,350 +2498,88 @@ export default function PerfilPage() {
             </Card>
 
             <Card>
-              <div className="mb-3 flex items-center justify-between gap-2 border-b border-border/40 pb-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Activity
-                    className="h-4 w-4 shrink-0 text-primary"
-                    aria-hidden
-                  />
-                  <h3 className="truncate text-base font-semibold text-foreground">
-                    Atividades
-                  </h3>
-                </div>
-                {myPostsPagination != null ? (
-                  <p className="shrink-0 text-xs text-muted-foreground">
-                    {myPostsPagination.total}{" "}
-                    {myPostsPagination.total === 1
-                      ? "publicação"
-                      : "publicações"}
-                  </p>
-                ) : null}
+              <div className="mb-3 flex items-center gap-2 border-b border-border/40 pb-3">
+                <BarChart2
+                  className="h-4 w-4 shrink-0 text-primary"
+                  aria-hidden
+                />
+                <h3 className="text-base font-semibold text-foreground">
+                  Estatísticas do perfil
+                </h3>
               </div>
-
-              {myPostsLoading ? (
-                <div className="flex justify-center py-12">
+              {profileStatsLoading && !profileStats ? (
+                <div className="flex items-center justify-center py-8">
                   <Loader2
-                    className="h-8 w-8 animate-spin text-muted-foreground"
-                    aria-label="A carregar publicações"
+                    className="h-6 w-6 animate-spin text-muted-foreground"
+                    aria-label="A carregar estatísticas"
                   />
                 </div>
-              ) : myPostsError ? (
-                <p className="py-8 text-center text-sm text-destructive">
-                  {myPostsError}
-                </p>
-              ) : myPosts.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Ainda não tem publicações.
-                </p>
               ) : (
-                <ul className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pt-1 [-webkit-overflow-scrolling:touch]">
-                  {myPosts.map((post) => {
-                    const slots = parsePostMidiaSlots(post.midia)
-                    const status = post.status
-                    const dateLabel =
-                      status === "published" && post.published_at
-                        ? `Publicado em ${formatActivityDate(post.published_at)}`
-                        : `Criado em ${formatActivityDate(post.created_at)}`
-                    return (
-                      <li
-                        key={String(post.id)}
-                        className="snap-start shrink-0"
-                        style={{ width: "min(88vw, 240px)" }}
+                <div className="space-y-5">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Conclusão do perfil
+                      </span>
+                      <span className="font-semibold tabular-nums text-foreground">
+                        {profileCompletion}%
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-500"
+                        style={{ width: `${profileCompletion}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg bg-muted/40 px-3 py-3">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Membro desde
+                      </p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                        <CalendarDays size={14} className="text-primary" />
+                        {memberSinceLabel}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 px-3 py-3">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Funções
+                      </p>
+                      <p className="mt-1 text-sm font-semibold tabular-nums text-foreground">
+                        {totalRoles}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 px-3 py-3">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Verificação
+                      </p>
+                      <p
+                        className={`mt-1 flex items-center gap-1.5 text-sm font-semibold ${
+                          isProfileVerified
+                            ? "text-emerald-600"
+                            : "text-muted-foreground"
+                        }`}
                       >
-                        <div className="flex h-full min-h-[220px] flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-                          {status === "draft" ? (
-                            <button
-                              type="button"
-                              className="flex min-h-0 flex-1 cursor-pointer flex-col rounded-none border-0 bg-transparent p-0 text-left font-inherit focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30"
-                              onClick={() => {
-                                setDraftModalPost(post)
-                                setDraftModalOpen(true)
-                              }}
-                            >
-                              <div
-                                className={
-                                  slots.length > 1
-                                    ? "flex gap-1.5 overflow-x-auto overscroll-x-contain border-b border-border/40 bg-muted/30 p-2"
-                                    : "relative aspect-video w-full shrink-0 border-b border-border/40 bg-muted/40"
-                                }
-                              >
-                                {slots.length === 0 ? (
-                                  <div className="flex aspect-video w-full items-center justify-center bg-muted/50">
-                                    <FileText
-                                      className="h-7 w-7 text-muted-foreground/45"
-                                      aria-hidden
-                                    />
-                                  </div>
-                                ) : slots.length === 1 ? (
-                                  <div className="relative h-full min-h-[110px] w-full">
-                                    {slots[0].url && slots[0].kind === "image" ? (
-                                      <Image
-                                        src={slots[0].url}
-                                        alt=""
-                                        fill
-                                        className="object-cover"
-                                        sizes="300px"
-                                        unoptimized={imageNeedsUnoptimized(
-                                          slots[0].url
-                                        )}
-                                      />
-                                    ) : slots[0].url &&
-                                      slots[0].kind === "video" ? (
-                                      <video
-                                        src={slots[0].url}
-                                        className="h-full w-full object-cover"
-                                        muted
-                                        playsInline
-                                        controls
-                                        preload="metadata"
-                                      />
-                                    ) : (
-                                      <div className="flex h-full min-h-[110px] flex-col items-center justify-center gap-1.5 px-3 text-center">
-                                        {slots[0].kind === "video" ? (
-                                          <Play
-                                            className="h-7 w-7 text-muted-foreground/55"
-                                            aria-hidden
-                                          />
-                                        ) : (
-                                          <FileText
-                                            className="h-7 w-7 text-muted-foreground/45"
-                                            aria-hidden
-                                          />
-                                        )}
-                                        <p className="line-clamp-2 text-[10px] text-muted-foreground">
-                                          {truncateActivityText(
-                                            slots[0].label,
-                                            90
-                                          )}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  slots.map((slot, idx) => (
-                                    <div
-                                      key={`${post.id}-m-${idx}`}
-                                      className="relative h-24 w-[min(180px,80%)] shrink-0 overflow-hidden rounded-lg border border-border/35 bg-muted/50"
-                                    >
-                                      {slot.url && slot.kind === "image" ? (
-                                        <Image
-                                          src={slot.url}
-                                          alt=""
-                                          fill
-                                          className="object-cover"
-                                          sizes="240px"
-                                          unoptimized={imageNeedsUnoptimized(
-                                            slot.url
-                                          )}
-                                        />
-                                      ) : slot.url && slot.kind === "video" ? (
-                                        <video
-                                          src={slot.url}
-                                          className="h-full w-full object-cover"
-                                          muted
-                                          playsInline
-                                          controls
-                                          preload="metadata"
-                                        />
-                                      ) : (
-                                        <div className="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center">
-                                          {slot.kind === "video" ? (
-                                            <Play
-                                              className="h-7 w-7 shrink-0 text-muted-foreground/55"
-                                              aria-hidden
-                                            />
-                                          ) : (
-                                            <FileText
-                                              className="h-7 w-7 shrink-0 text-muted-foreground/45"
-                                              aria-hidden
-                                            />
-                                          )}
-                                          <p className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
-                                            {truncateActivityText(slot.label, 80)}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-
-                              <div className="flex flex-1 flex-col p-2.5">
-                                <div className="flex flex-wrap items-start gap-2 gap-y-1">
-                                  <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug text-foreground">
-                                    {post.title?.trim() || "Sem título"}
-                                  </p>
-                                  <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-400">
-                                    {activityStatusLabel(status)}
-                                  </span>
-                                </div>
-                                <p className="mt-1.5 line-clamp-2 flex-1 text-xs text-muted-foreground">
-                                  {truncateActivityText(post.content, 120)}
-                                </p>
-                                <p className="mt-1.5 text-[10px] text-muted-foreground">
-                                  {dateLabel}
-                                  {typeof post.views_count === "number"
-                                    ? ` · ${post.views_count} vistas`
-                                    : ""}
-                                </p>
-                                <p className="mt-1 text-[10px] font-medium text-primary">
-                                  Toque para rever ou publicar o rascunho
-                                </p>
-                              </div>
-                            </button>
-                          ) : (
-                            <Link
-                              href={`/posts/${encodeURIComponent(String(post.id))}`}
-                              className="flex min-h-0 flex-1 flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                            >
-                              <div
-                                className={
-                                  slots.length > 1
-                                    ? "flex gap-1.5 overflow-x-auto overscroll-x-contain border-b border-border/40 bg-muted/30 p-2"
-                                    : "relative aspect-video w-full shrink-0 border-b border-border/40 bg-muted/40"
-                                }
-                              >
-                                {slots.length === 0 ? (
-                                  <div className="flex aspect-video w-full items-center justify-center bg-muted/50">
-                                    <FileText
-                                      className="h-7 w-7 text-muted-foreground/45"
-                                      aria-hidden
-                                    />
-                                  </div>
-                                ) : slots.length === 1 ? (
-                                  <div className="relative h-full min-h-[110px] w-full">
-                                    {slots[0].url && slots[0].kind === "image" ? (
-                                      <Image
-                                        src={slots[0].url}
-                                        alt=""
-                                        fill
-                                        className="object-cover"
-                                        sizes="300px"
-                                        unoptimized={imageNeedsUnoptimized(
-                                          slots[0].url
-                                        )}
-                                      />
-                                    ) : slots[0].url &&
-                                      slots[0].kind === "video" ? (
-                                      <video
-                                        src={slots[0].url}
-                                        className="h-full w-full object-cover"
-                                        muted
-                                        playsInline
-                                        controls
-                                        preload="metadata"
-                                      />
-                                    ) : (
-                                      <div className="flex h-full min-h-[110px] flex-col items-center justify-center gap-1.5 px-3 text-center">
-                                        {slots[0].kind === "video" ? (
-                                          <Play
-                                            className="h-7 w-7 text-muted-foreground/55"
-                                            aria-hidden
-                                          />
-                                        ) : (
-                                          <FileText
-                                            className="h-7 w-7 text-muted-foreground/45"
-                                            aria-hidden
-                                          />
-                                        )}
-                                        <p className="line-clamp-2 text-[10px] text-muted-foreground">
-                                          {truncateActivityText(
-                                            slots[0].label,
-                                            90
-                                          )}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  slots.map((slot, idx) => (
-                                    <div
-                                      key={`${post.id}-m-${idx}`}
-                                      className="relative h-24 w-[min(180px,80%)] shrink-0 overflow-hidden rounded-lg border border-border/35 bg-muted/50"
-                                    >
-                                      {slot.url && slot.kind === "image" ? (
-                                        <Image
-                                          src={slot.url}
-                                          alt=""
-                                          fill
-                                          className="object-cover"
-                                          sizes="240px"
-                                          unoptimized={imageNeedsUnoptimized(
-                                            slot.url
-                                          )}
-                                        />
-                                      ) : slot.url && slot.kind === "video" ? (
-                                        <video
-                                          src={slot.url}
-                                          className="h-full w-full object-cover"
-                                          muted
-                                          playsInline
-                                          controls
-                                          preload="metadata"
-                                        />
-                                      ) : (
-                                        <div className="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center">
-                                          {slot.kind === "video" ? (
-                                            <Play
-                                              className="h-7 w-7 shrink-0 text-muted-foreground/55"
-                                              aria-hidden
-                                            />
-                                          ) : (
-                                            <FileText
-                                              className="h-7 w-7 shrink-0 text-muted-foreground/45"
-                                              aria-hidden
-                                            />
-                                          )}
-                                          <p className="line-clamp-2 text-[10px] leading-tight text-muted-foreground">
-                                            {truncateActivityText(slot.label, 80)}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-
-                              <div className="flex flex-1 flex-col p-2.5">
-                                <div className="flex flex-wrap items-start gap-2 gap-y-1">
-                                  <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug text-foreground">
-                                    {post.title?.trim() || "Sem título"}
-                                  </p>
-                                  <span
-                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                                      status === "published"
-                                        ? "bg-primary/15 text-primary dark:text-primary"
-                                        : status === "draft"
-                                          ? "bg-amber-500/15 text-amber-800 dark:text-amber-400"
-                                          : "bg-muted text-muted-foreground"
-                                    }`}
-                                  >
-                                    {activityStatusLabel(status)}
-                                  </span>
-                                </div>
-                                <p className="mt-1.5 line-clamp-2 flex-1 text-xs text-muted-foreground">
-                                  {truncateActivityText(post.content, 120)}
-                                </p>
-                                <p className="mt-1.5 text-[10px] text-muted-foreground">
-                                  {dateLabel}
-                                  {typeof post.views_count === "number"
-                                    ? ` · ${post.views_count} vistas`
-                                    : ""}
-                                </p>
-                              </div>
-                            </Link>
-                          )}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                        <BadgeCheck
+                          size={14}
+                          className={
+                            isProfileVerified
+                              ? "text-emerald-600"
+                              : "text-muted-foreground"
+                          }
+                        />
+                        {isProfileVerified ? "Verificado" : "Não verificado"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
             </Card>
 
             <Card className="min-h-[400px]">
               <div className="mb-3 flex flex-col gap-3 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-base font-semibold text-foreground">Minha Carreira</h3>
+                <h3 className="text-base font-semibold text-foreground">Configurações de Serviço</h3>
                 {servicesTabIndex >= 0 && careerTab === servicesTabIndex ? (
                   <Button
                     type="button"
@@ -2794,7 +2590,8 @@ export default function PerfilPage() {
                   >
                     Cadastrar serviço
                   </Button>
-                ) : careerTab >= 2 && careerTab !== servicesTabIndex ? (
+                ) : experienceTabIndex >= 0 &&
+                  careerTab === experienceTabIndex ? (
                   <div className="flex flex-wrap gap-2">
                     <select
                       className="rounded-lg border border-border/45 bg-background px-3 py-2 text-xs text-foreground outline-none"
@@ -2814,6 +2611,8 @@ export default function PerfilPage() {
 
               <div className="mb-6 flex gap-4 overflow-x-auto border-b border-border/40 pb-1">
                 {careerTabs.map((tab, i) => {
+                  const showCount =
+                    i === 0 || i === 1 || i === servicesTabIndex
                   const count =
                     i === 0
                       ? followersTotal
@@ -2833,10 +2632,12 @@ export default function PerfilPage() {
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      {tab}{" "}
-                      <span className="ml-1 rounded bg-muted px-1.5 text-[10px]">
-                        {count}
-                      </span>
+                      {tab}
+                      {showCount ? (
+                        <span className="ml-1 rounded bg-muted px-1.5 text-[10px]">
+                          {count}
+                        </span>
+                      ) : null}
                     </button>
                   )
                 })}
@@ -2973,6 +2774,76 @@ export default function PerfilPage() {
                     ))}
                   </div>
                 )
+              ) : availabilityTabIndex >= 0 &&
+                careerTab === availabilityTabIndex ? (
+                availabilityLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                    <Loader2 size={18} className="animate-spin" />
+                    A carregar disponibilidade…
+                  </div>
+                ) : (
+                  <div className="mx-auto w-full max-w-md space-y-5 py-4">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="perfil-hourly-rate">
+                        Tarifa horária (Kz)
+                      </Label>
+                      <Input
+                        id="perfil-hourly-rate"
+                        type="number"
+                        min={0}
+                        step={100}
+                        inputMode="numeric"
+                        value={hourlyRateInput}
+                        onChange={(e) => setHourlyRateInput(e.target.value)}
+                        disabled={savingAvailability}
+                        placeholder="Ex.: 5000"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Valor médio que cobra por hora de trabalho.
+                      </p>
+                    </div>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/40 bg-muted/20 p-4">
+                      <input
+                        type="checkbox"
+                        checked={isAvailableForWork}
+                        onChange={(e) =>
+                          setIsAvailableForWork(e.target.checked)
+                        }
+                        disabled={savingAvailability}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-0 bg-muted/50 ring-1 ring-muted-foreground/20"
+                      />
+                      <span className="space-y-0.5">
+                        <span className="block text-sm font-medium text-foreground">
+                          Disponível para novos pedidos
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Clientes poderão solicitar os seus serviços na
+                          plataforma.
+                        </span>
+                      </span>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="buy"
+                      className="w-full rounded-lg font-semibold shadow-none"
+                      disabled={savingAvailability}
+                      onClick={() => void handleSaveAvailability()}
+                    >
+                      {savingAvailability ? (
+                        <>
+                          <Loader2
+                            size={16}
+                            className="mr-2 animate-spin"
+                            aria-hidden
+                          />
+                          A guardar…
+                        </>
+                      ) : (
+                        "Guardar alterações"
+                      )}
+                    </Button>
+                  </div>
+                )
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-4 rounded-2xl bg-muted p-4">
@@ -3015,23 +2886,6 @@ export default function PerfilPage() {
           />
         </>
       ) : null}
-
-      <DraftFinalizeModal
-        open={draftModalOpen}
-        onOpenChange={(open) => {
-          setDraftModalOpen(open)
-          if (!open) setDraftModalPost(null)
-        }}
-        post={draftModalPost}
-        token={
-          typeof window !== "undefined"
-            ? window.sessionStorage.getItem("auth_token")
-            : null
-        }
-        onRefreshPosts={refreshMyPosts}
-        onSuccessMessage={(msg) => toast.success(msg)}
-        onErrorMessage={(msg) => toast.error(msg)}
-      />
 
       <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
         <DialogContent className="border-border/45 shadow-none sm:max-w-md">
