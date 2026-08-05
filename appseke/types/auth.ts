@@ -88,8 +88,8 @@ export interface UpdateProfileAvatarRequest {
 /** Payload para atualização da localização (PUT /profile/location) */
 export interface UpdateProfileLocationRequest {
   user_id: string
-  latitude?: number
-  longitude?: number
+  latitude: number
+  longitude: number
   province: string
   municipality: string
 }

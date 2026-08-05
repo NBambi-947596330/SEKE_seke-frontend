@@ -36,6 +36,7 @@ import {
   Play,
   Check,
   X,
+  RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -67,6 +68,7 @@ import {
   updateProfileAvatar,
   updateProfileLocation,
 } from "@/lib/profile-client"
+import { getClientGeolocation, type GeoCoords } from "@/lib/geolocation"
 import { extractUserId } from "@/lib/profile-user-id"
 import {
   extractProfileUserId,
@@ -624,6 +626,10 @@ export default function PerfilPage() {
     | null
   >(null)
   const [editingInfoValue, setEditingInfoValue] = useState("")
+  const [editingCityValue, setEditingCityValue] = useState("")
+  const [locationCoords, setLocationCoords] = useState<GeoCoords | null>(null)
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [coverUploading, setCoverUploading] = useState(false)
   const coverFileInputRef = useRef<HTMLInputElement | null>(null)
   const [coverPreviewSrc, setCoverPreviewSrc] = useState("")
@@ -877,7 +883,11 @@ export default function PerfilPage() {
   }, [buildProfileFormState])
 
   const persistProfile = useCallback(
-    async (formData: ProfileFormState, closeModalAfterSave: boolean) => {
+    async (
+      formData: ProfileFormState,
+      closeModalAfterSave: boolean,
+      coordsOverride?: GeoCoords | null
+    ) => {
       if (typeof window === "undefined") return false
       const token = window.sessionStorage.getItem("auth_token")
       if (!token) {
@@ -921,22 +931,76 @@ export default function PerfilPage() {
             }
           | null
 
-        const lat =
-          updatedProfile?.latitude ?? perfilInfo?.latitude
-        const lng =
-          updatedProfile?.longitude ?? perfilInfo?.longitude
-        if (typeof lat === "number" && typeof lng === "number") {
+        const province = formData.location.trim()
+        const municipality = formData.city.trim()
+        const prevProvince = (
+          perfilInfo?.province ??
+          perfilInfo?.location ??
+          ""
+        ).trim()
+        const prevMunicipality = (
+          perfilInfo?.municipality ??
+          perfilInfo?.city ??
+          ""
+        ).trim()
+        const locationChanged =
+          province !== prevProvince || municipality !== prevMunicipality
+        const hasCoordsOverride =
+          coordsOverride &&
+          typeof coordsOverride.latitude === "number" &&
+          typeof coordsOverride.longitude === "number"
+
+        if ((locationChanged || hasCoordsOverride) && (province || municipality)) {
+          const geo = hasCoordsOverride
+            ? { success: true as const, coords: coordsOverride }
+            : await getClientGeolocation()
+          const lat =
+            geo.success
+              ? geo.coords.latitude
+              : typeof updatedProfile?.latitude === "number"
+                ? updatedProfile.latitude
+                : typeof perfilInfo?.latitude === "number"
+                  ? perfilInfo.latitude
+                  : null
+          const lng =
+            geo.success
+              ? geo.coords.longitude
+              : typeof updatedProfile?.longitude === "number"
+                ? updatedProfile.longitude
+                : typeof perfilInfo?.longitude === "number"
+                  ? perfilInfo.longitude
+                  : null
+
+          if (typeof lat !== "number" || typeof lng !== "number") {
+            toast.error(
+              geo.success
+                ? "Não foi possível obter as coordenadas."
+                : geo.message
+            )
+            return false
+          }
+
           const locationUpdate = await updateProfileLocation(token, {
             user_id: userId,
             latitude: lat,
             longitude: lng,
-            province: formData.location.trim(),
-            municipality: formData.city.trim(),
+            province,
+            municipality,
           })
           if (!locationUpdate.success) {
             toast.error(locationUpdate.error)
             return false
           }
+
+          setPerfilInfo((prev) => ({
+            ...(prev ?? {}),
+            province: province || prev?.province,
+            municipality: municipality || prev?.municipality,
+            location: province || prev?.location,
+            city: municipality || prev?.city,
+            latitude: lat,
+            longitude: lng,
+          }))
         }
 
         const avatarUrl = formData.avatar.trim()
@@ -1120,24 +1184,68 @@ export default function PerfilPage() {
       setProfileForm(formState)
       setEditingInfoField(field)
       setEditingInfoValue(formState[field] ?? "")
+      if (field === "location") {
+        setEditingCityValue(formState.city ?? "")
+        setLocationCoords(null)
+        setLocationError(null)
+      }
     },
     [buildProfileFormState]
   )
 
+  const refreshProfileLocationCoords = useCallback(async () => {
+    setLocationLoading(true)
+    setLocationError(null)
+    const result = await getClientGeolocation()
+    setLocationLoading(false)
+    if (result.success) {
+      setLocationCoords(result.coords)
+      return result.coords
+    }
+    setLocationCoords(null)
+    setLocationError(result.message)
+    return null
+  }, [])
+
   const handleSaveInfoField = useCallback(async () => {
     if (!editingInfoField) return
-    const nextForm = { ...profileForm, [editingInfoField]: editingInfoValue }
+    const nextForm =
+      editingInfoField === "location"
+        ? {
+            ...profileForm,
+            location: editingInfoValue,
+            city: editingCityValue,
+          }
+        : { ...profileForm, [editingInfoField]: editingInfoValue }
     setProfileForm(nextForm)
-    const saved = await persistProfile(nextForm, false)
+    const saved = await persistProfile(
+      nextForm,
+      false,
+      editingInfoField === "location" ? locationCoords : undefined
+    )
     if (saved) {
       setEditingInfoField(null)
       setEditingInfoValue("")
+      setEditingCityValue("")
+      setLocationCoords(null)
+      setLocationError(null)
     }
-  }, [editingInfoField, editingInfoValue, persistProfile, profileForm])
+  }, [
+    editingCityValue,
+    editingInfoField,
+    editingInfoValue,
+    locationCoords,
+    persistProfile,
+    profileForm,
+  ])
 
   const handleCancelInfoField = useCallback(() => {
     setEditingInfoField(null)
     setEditingInfoValue("")
+    setEditingCityValue("")
+    setLocationCoords(null)
+    setLocationError(null)
+    setLocationLoading(false)
   }, [])
 
   const handleFieldKeyDown = useCallback(
@@ -1925,6 +2033,58 @@ export default function PerfilPage() {
                         onKeyDown={handleFieldKeyDown}
                         placeholder="Selecione a província"
                       />
+                      <Input
+                        value={editingCityValue}
+                        onChange={(e) => setEditingCityValue(e.target.value)}
+                        onKeyDown={handleFieldKeyDown}
+                        placeholder="Município (ex.: Talatona)"
+                      />
+                      <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-foreground">
+                              Coordenadas GPS
+                            </p>
+                            {locationLoading ? (
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                A obter a sua posição…
+                              </p>
+                            ) : locationCoords ? (
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {locationCoords.latitude},{" "}
+                                {locationCoords.longitude}
+                              </p>
+                            ) : typeof perfilInfo?.latitude === "number" &&
+                              typeof perfilInfo?.longitude === "number" ? (
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                Atual: {perfilInfo.latitude},{" "}
+                                {perfilInfo.longitude}. Ao guardar, o GPS é
+                                atualizado.
+                              </p>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {locationError ??
+                                  "Ao guardar, pedimos a sua localização."}
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 shrink-0"
+                            disabled={savingProfile || locationLoading}
+                            onClick={() => void refreshProfileLocationCoords()}
+                          >
+                            {locationLoading ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="size-3.5" />
+                            )}
+                            <span className="sr-only">Atualizar GPS</span>
+                          </Button>
+                        </div>
+                      </div>
                       <ProfileInlineFieldActions
                         saving={savingProfile}
                         onSave={() => void handleSaveInfoField()}
@@ -1932,7 +2092,17 @@ export default function PerfilPage() {
                       />
                     </div>
                   ) : (
-                    <p className="mt-1 text-sm font-medium text-foreground">{locationLabel}</p>
+                    <div className="mt-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {locationLabel}
+                      </p>
+                      {typeof perfilInfo?.latitude === "number" &&
+                      typeof perfilInfo?.longitude === "number" ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {perfilInfo.latitude}, {perfilInfo.longitude}
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </div>
                 <div className="rounded-lg border border-border/45 bg-muted/20 p-3">
