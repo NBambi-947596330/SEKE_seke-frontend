@@ -176,17 +176,20 @@ export function Navbar() {
                     <div className="flex shrink-0 items-center gap-1 sm:gap-2 md:gap-1.5 lg:gap-2">
                         <NavbarNotifications />
 
-                        <div className="hidden items-center gap-1.5 md:flex lg:gap-2">
+                        {/* Auth / perfil — sempre visível; em mobile os CTAs não ficam só no menu */}
+                        <div className="flex items-center gap-1 sm:gap-1.5 lg:gap-2">
                             {!isLoading && (
                                 isAuthenticated ? (
-                                    <UserMenu />
+                                    <div className="hidden md:block">
+                                        <UserMenu />
+                                    </div>
                                 ) : (
                                     <>
                                         <Button
                                             type="button"
                                             onClick={() => router.push('/auth/login')}
                                             variant="outline"
-                                            className="h-9 cursor-pointer border-gray-200 px-3 text-sm md:h-10 md:px-4"
+                                            className="h-8 cursor-pointer border-gray-200 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
                                         >
                                             Entrar
                                         </Button>
@@ -194,7 +197,7 @@ export function Navbar() {
                                             type="button"
                                             onClick={() => router.push('/auth/register')}
                                             style={{ backgroundColor: lightTheme.colors.primary }}
-                                            className="h-9 cursor-pointer px-3 text-sm md:h-10 md:px-4"
+                                            className="h-8 cursor-pointer px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
                                         >
                                             Criar Conta
                                         </Button>
@@ -301,40 +304,14 @@ export function Navbar() {
                                 </>
                             )}
 
-                            <div className="border-t border-gray-100 pt-3 md:hidden">
-                                {!isLoading && (
-                                    isAuthenticated ? (
-                                        <div className="flex justify-end px-1" onClick={() => setIsMenuOpen(false)}>
-                                            <UserMenu />
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                className="w-full"
-                                                onClick={() => {
-                                                    setIsMenuOpen(false)
-                                                    router.push('/auth/login')
-                                                }}
-                                            >
-                                                Entrar
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                style={{ backgroundColor: lightTheme.colors.primary }}
-                                                className="w-full"
-                                                onClick={() => {
-                                                    setIsMenuOpen(false)
-                                                    router.push('/auth/register')
-                                                }}
-                                            >
-                                                Criar Conta
-                                            </Button>
-                                        </div>
-                                    )
-                                )}
-                            </div>
+                            {/* Perfil no menu mobile (CTAs de auth já estão na barra) */}
+                            {!isLoading && isAuthenticated ? (
+                                <div className="border-t border-gray-100 pt-3">
+                                    <div className="flex justify-end px-1" onClick={() => setIsMenuOpen(false)}>
+                                        <UserMenu />
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                     </div>
                 )}
