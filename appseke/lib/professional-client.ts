@@ -5,11 +5,13 @@ import type {
   ProfessionalProfileRequest,
   ProfessionalProfileResponse,
   ProfessionalProfileUpdateRequest,
+  ProfessionalVerifyRequest,
 } from "@/types/professional"
 
 /** Sempre via BFF — GET externo exige body JSON (Node fetch não permite). */
 const PROFESSIONAL_PROFILE_API = "/api/professional/profile"
 const PROFESSIONAL_AVAILABILITY_API = "/api/professional/availability"
+const PROFESSIONAL_VERIFY_API = "/api/professional/verify"
 
 export type ProfessionalProfileOutcome =
   | { success: true; data: ProfessionalProfileResponse }
@@ -300,5 +302,35 @@ export async function updateProfessionalAvailability(
   return parseProfessionalResponse(
     res,
     "Não foi possível actualizar a disponibilidade."
+  )
+}
+
+/** POST /professional/verify — solicitar verificação da conta profissional */
+export async function requestProfessionalVerification(
+  payload: ProfessionalVerifyRequest,
+  token: string
+): Promise<ProfessionalProfileOutcome> {
+  const userId = payload.user_id?.trim()
+  if (!userId) {
+    return {
+      success: false,
+      error: "O campo user_id é obrigatório.",
+      statusCode: 400,
+    }
+  }
+
+  const res = await fetch(PROFESSIONAL_VERIFY_API, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ user_id: userId }),
+  })
+
+  return parseProfessionalResponse(
+    res,
+    "Não foi possível solicitar a verificação da conta."
   )
 }

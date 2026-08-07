@@ -21,6 +21,11 @@ export interface ProfessionalAvailabilityUpdateRequest {
   is_available: boolean
 }
 
+/** Payload para pedir verificação (POST /professional/verify) */
+export interface ProfessionalVerifyRequest {
+  user_id: string
+}
+
 /** Parâmetro de GET /professional/profile */
 export interface ProfessionalProfileGetRequest {
   user_id: string

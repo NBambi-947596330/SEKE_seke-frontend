@@ -99,6 +99,7 @@ import {
   extractProfessionalProfileFields,
   fetchProfessionalProfile,
   formatHourlyRateInput,
+  requestProfessionalVerification,
   updateProfessionalProfile,
 } from "@/lib/professional-client"
 import type { MarketplaceService } from "@/types/marketplace"
@@ -524,6 +525,10 @@ export default function PerfilPage() {
   const [isAvailableForWork, setIsAvailableForWork] = useState(true)
   const [savingAvailability, setSavingAvailability] = useState(false)
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [isProfessionalVerified, setIsProfessionalVerified] = useState<
+    boolean | null
+  >(null)
+  const [verifyingProfessional, setVerifyingProfessional] = useState(false)
   const [isPerfilLoading, setIsPerfilLoading] = useState(false)
   const [careerTab, setCareerTab] = useState(0)
   const [bioExpanded, setBioExpanded] = useState(false)
@@ -1504,6 +1509,7 @@ export default function PerfilPage() {
             if (proFields) {
               setHourlyRateInput(formatHourlyRateInput(proFields.hourly_rate))
               setIsAvailableForWork(proFields.is_available)
+              setIsProfessionalVerified(proFields.is_verified)
             }
             syncUserDataInSession({
               id: mapped.id,
@@ -1642,6 +1648,7 @@ export default function PerfilPage() {
 
         setHourlyRateInput(formatHourlyRateInput(outcome.fields.hourly_rate))
         setIsAvailableForWork(outcome.fields.is_available)
+        setIsProfessionalVerified(outcome.fields.is_verified)
       } finally {
         if (!cancelled) setAvailabilityLoading(false)
       }
@@ -1652,6 +1659,49 @@ export default function PerfilPage() {
       cancelled = true
     }
   }, [isAuthenticated, profileUserId, perfilInfo?.profile_type])
+
+  const handleRequestVerification = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const token = window.sessionStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Sessão inválida. Inicie sessão novamente.")
+      return
+    }
+
+    const userId = await resolveProfileUserId(token, profileUserId)
+    if (!userId) {
+      toast.error("Não foi possível obter o ID do utilizador.")
+      return
+    }
+
+    setVerifyingProfessional(true)
+    try {
+      const outcome = await requestProfessionalVerification(
+        { user_id: userId },
+        token
+      )
+      if (!outcome.success) {
+        toast.error(outcome.error)
+        return
+      }
+
+      const refreshed = await fetchProfessionalProfile(token, userId)
+      if (refreshed.success) {
+        setIsProfessionalVerified(refreshed.fields.is_verified)
+        if (refreshed.fields.is_verified) {
+          toast.success("Conta profissional verificada.")
+        } else {
+          toast.success("Pedido de verificação enviado.")
+        }
+      } else {
+        toast.success("Pedido de verificação enviado.")
+      }
+    } catch {
+      toast.error("Erro de ligação ao solicitar verificação.")
+    } finally {
+      setVerifyingProfessional(false)
+    }
+  }, [profileUserId, toast])
 
   useEffect(() => {
     if (!profileUserId || !isAuthenticated) return
@@ -1922,14 +1972,58 @@ export default function PerfilPage() {
                       <h1 className="text-xl font-semibold tracking-tight text-foreground">
                         {displayUser.name || "Utilizador"}
                       </h1>
-                      <span className="rounded border border-primary/15 bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                        Conta ativa
-                      </span>
+                      {isProfessional ? (
+                        isProfessionalVerified === true ? (
+                          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            <BadgeCheck size={12} aria-hidden />
+                            Verificado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Não verificado
+                          </span>
+                        )
+                      ) : (
+                        <span className="rounded border border-primary/15 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                          Conta ativa
+                        </span>
+                      )}
                     </div>
                     {displayUser.username ? (
                       <p className="mb-2 text-sm text-muted-foreground">
                         @{usernameShort}
                       </p>
+                    ) : null}
+                    {isProfessional && isProfessionalVerified === false ? (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-amber-700">
+                          A sua conta profissional ainda não está verificada.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="buy"
+                          size="xs"
+                          className="rounded-lg text-xs font-semibold shadow-none"
+                          disabled={verifyingProfessional}
+                          onClick={() => void handleRequestVerification()}
+                        >
+                          {verifyingProfessional ? (
+                            <>
+                              <Loader2
+                                size={14}
+                                className="mr-1.5 animate-spin"
+                                aria-hidden
+                              />
+                              A verificar…
+                            </>
+                          ) : (
+                            <>
+                              <BadgeCheck size={14} className="mr-1.5" aria-hidden />
+                              Verificar conta
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                       {isProfessional ? (
