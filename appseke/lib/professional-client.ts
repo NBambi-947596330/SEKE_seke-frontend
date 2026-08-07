@@ -305,7 +305,7 @@ export async function updateProfessionalAvailability(
   )
 }
 
-/** POST /professional/verify — solicitar verificação da conta profissional */
+/** POST /api/professional/verify → API externa /professional/verify */
 export async function requestProfessionalVerification(
   payload: ProfessionalVerifyRequest,
   token: string
@@ -319,18 +319,35 @@ export async function requestProfessionalVerification(
     }
   }
 
-  const res = await fetch(PROFESSIONAL_VERIFY_API, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ user_id: userId }),
-  })
+  if (!token.trim()) {
+    return {
+      success: false,
+      error: "Token de autorização ausente.",
+      statusCode: 401,
+    }
+  }
 
-  return parseProfessionalResponse(
-    res,
-    "Não foi possível solicitar a verificação da conta."
-  )
+  try {
+    const res = await fetch(PROFESSIONAL_VERIFY_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ user_id: userId }),
+      cache: "no-store",
+    })
+
+    return parseProfessionalResponse(
+      res,
+      "Não foi possível solicitar a verificação da conta."
+    )
+  } catch {
+    return {
+      success: false,
+      error: "Erro de ligação ao solicitar a verificação.",
+      statusCode: 0,
+    }
+  }
 }

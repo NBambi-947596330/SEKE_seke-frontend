@@ -1662,13 +1662,19 @@ export default function PerfilPage() {
 
   const handleRequestVerification = useCallback(async () => {
     if (typeof window === "undefined") return
+
     const token = window.sessionStorage.getItem("auth_token")
     if (!token) {
       toast.error("Sessão inválida. Inicie sessão novamente.")
       return
     }
 
-    const userId = await resolveProfileUserId(token, profileUserId)
+    const userId =
+      profileUserId?.trim() ||
+      getStoredUserId() ||
+      extractUserIdFromJwt(token) ||
+      ""
+
     if (!userId) {
       toast.error("Não foi possível obter o ID do utilizador.")
       return
@@ -1688,11 +1694,11 @@ export default function PerfilPage() {
       const refreshed = await fetchProfessionalProfile(token, userId)
       if (refreshed.success) {
         setIsProfessionalVerified(refreshed.fields.is_verified)
-        if (refreshed.fields.is_verified) {
-          toast.success("Conta profissional verificada.")
-        } else {
-          toast.success("Pedido de verificação enviado.")
-        }
+        toast.success(
+          refreshed.fields.is_verified
+            ? "Conta profissional verificada."
+            : "Pedido de verificação enviado."
+        )
       } else {
         toast.success("Pedido de verificação enviado.")
       }
@@ -2005,7 +2011,11 @@ export default function PerfilPage() {
                           size="xs"
                           className="rounded-lg text-xs font-semibold shadow-none"
                           disabled={verifyingProfessional}
-                          onClick={() => void handleRequestVerification()}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            void handleRequestVerification()
+                          }}
                         >
                           {verifyingProfessional ? (
                             <>
