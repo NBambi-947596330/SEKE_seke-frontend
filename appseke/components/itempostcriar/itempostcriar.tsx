@@ -20,22 +20,29 @@ import { cn } from "@/lib/utils"
 import { createPost, extractHashtagsFromContent } from "@/lib/posts-client"
 import type { PostRecord } from "@/types/post"
 
-/** Limites de ficheiro aceites antes do upload para Cloudinary. */
+/** Limites de ficheiro aceites antes do upload. */
 const MAX_FILE_BYTES = 12 * 1024 * 1024
 const MAX_VIDEO_BYTES = 80 * 1024 * 1024
 const MAX_IMAGES = 10
+const MAX_VIDEOS = 10
 
-type ImageDraft = {
+type MediaDraft = {
   id: string
   file: File
   previewUrl: string
 }
 
-function createImageDraft(file: File): ImageDraft {
+function createMediaDraft(file: File): MediaDraft {
   return {
     id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     file,
     previewUrl: URL.createObjectURL(file),
+  }
+}
+
+function revokeMediaDrafts(drafts: MediaDraft[]) {
+  for (const draft of drafts) {
+    URL.revokeObjectURL(draft.previewUrl)
   }
 }
 
@@ -51,46 +58,35 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
   const [open, setOpen] = useState(false)
   const [content, setContent] = useState("")
   const [mediaType, setMediaType] = useState<"image" | "video" | null>(null)
-  const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null)
-  const [imageDrafts, setImageDrafts] = useState<ImageDraft[]>([])
+  const [videoDrafts, setVideoDrafts] = useState<MediaDraft[]>([])
+  const [imageDrafts, setImageDrafts] = useState<MediaDraft[]>([])
   const [isCompressingImage, setIsCompressingImage] = useState(false)
   const [isLoadingVideo, setIsLoadingVideo] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const imageDraftsRef = useRef(imageDrafts)
-  const videoPreviewUrlRef = useRef(videoPreviewUrl)
+  const videoDraftsRef = useRef(videoDrafts)
 
   imageDraftsRef.current = imageDrafts
-  videoPreviewUrlRef.current = videoPreviewUrl
-
-  const revokeImageDrafts = useCallback((drafts: ImageDraft[]) => {
-    for (const draft of drafts) {
-      URL.revokeObjectURL(draft.previewUrl)
-    }
-  }, [])
+  videoDraftsRef.current = videoDrafts
 
   const clearMedia = useCallback(() => {
     setMediaType(null)
     setImageDrafts((prev) => {
-      revokeImageDrafts(prev)
+      revokeMediaDrafts(prev)
       return []
     })
-    setVideoFile(null)
-    if (videoPreviewUrl) {
-      URL.revokeObjectURL(videoPreviewUrl)
-    }
-    setVideoPreviewUrl(null)
-  }, [revokeImageDrafts, videoPreviewUrl])
+    setVideoDrafts((prev) => {
+      revokeMediaDrafts(prev)
+      return []
+    })
+  }, [])
 
   useEffect(() => {
     return () => {
-      revokeImageDrafts(imageDraftsRef.current)
-      const videoUrl = videoPreviewUrlRef.current
-      if (videoUrl) {
-        URL.revokeObjectURL(videoUrl)
-      }
+      revokeMediaDrafts(imageDraftsRef.current)
+      revokeMediaDrafts(videoDraftsRef.current)
     }
-  }, [revokeImageDrafts])
+  }, [])
 
   const removeImage = useCallback((id: string) => {
     setImageDrafts((prev) => {
@@ -102,35 +98,58 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
     })
   }, [])
 
+  const removeVideo = useCallback((id: string) => {
+    setVideoDrafts((prev) => {
+      const removed = prev.find((item) => item.id === id)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      const next = prev.filter((item) => item.id !== id)
+      if (next.length === 0) setMediaType(null)
+      return next
+    })
+  }, [])
+
   const onVideoFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
+      const files = Array.from(e.target.files ?? [])
       e.target.value = ""
-      if (!file) return
+      if (files.length === 0) return
 
-      if (!file.type.startsWith("video/")) {
-        toast.error("Selecione um ficheiro de vídeo.")
+      const invalid = files.find((file) => !file.type.startsWith("video/"))
+      if (invalid) {
+        toast.error("Selecione apenas ficheiros de vídeo.")
         return
       }
 
-      if (file.size > MAX_VIDEO_BYTES) {
-        toast.error("O vídeo deve ter no máximo 80 MB.")
+      const tooLarge = files.find((file) => file.size > MAX_VIDEO_BYTES)
+      if (tooLarge) {
+        toast.error("Cada vídeo deve ter no máximo 80 MB.")
         return
       }
 
       setIsLoadingVideo(true)
       try {
         setImageDrafts((prev) => {
-          revokeImageDrafts(prev)
+          revokeMediaDrafts(prev)
           return []
         })
-        if (videoPreviewUrl) {
-          URL.revokeObjectURL(videoPreviewUrl)
-        }
-
-        setVideoFile(file)
-        setVideoPreviewUrl(URL.createObjectURL(file))
         setMediaType("video")
+
+        setVideoDrafts((prev) => {
+          const remaining = MAX_VIDEOS - prev.length
+          if (remaining <= 0) {
+            toast.error(`Pode anexar no máximo ${MAX_VIDEOS} vídeos.`)
+            return prev
+          }
+
+          const toAdd = files.slice(0, remaining).map(createMediaDraft)
+          if (files.length > remaining) {
+            toast.error(
+              `Só foram adicionados ${remaining} vídeos (máximo ${MAX_VIDEOS}).`
+            )
+          }
+
+          return [...prev, ...toAdd]
+        })
       } catch (err) {
         const msg =
           err instanceof Error ? err.message : "Não foi possível processar o vídeo."
@@ -139,7 +158,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         setIsLoadingVideo(false)
       }
     },
-    [revokeImageDrafts, toast, videoPreviewUrl]
+    [toast]
   )
 
   const onImageFileChange = useCallback(
@@ -162,11 +181,10 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
 
       setIsCompressingImage(true)
       try {
-        if (videoPreviewUrl) {
-          URL.revokeObjectURL(videoPreviewUrl)
-        }
-        setVideoFile(null)
-        setVideoPreviewUrl(null)
+        setVideoDrafts((prev) => {
+          revokeMediaDrafts(prev)
+          return []
+        })
         setMediaType("image")
 
         setImageDrafts((prev) => {
@@ -176,9 +194,11 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
             return prev
           }
 
-          const toAdd = files.slice(0, remaining).map(createImageDraft)
+          const toAdd = files.slice(0, remaining).map(createMediaDraft)
           if (files.length > remaining) {
-            toast.error(`Só foram adicionadas ${remaining} imagens (máximo ${MAX_IMAGES}).`)
+            toast.error(
+              `Só foram adicionadas ${remaining} imagens (máximo ${MAX_IMAGES}).`
+            )
           }
 
           return [...prev, ...toAdd]
@@ -191,7 +211,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         setIsCompressingImage(false)
       }
     },
-    [toast, videoPreviewUrl]
+    [toast]
   )
 
   const resetDraft = useCallback(() => {
@@ -223,8 +243,8 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
       setIsLoading(true)
       try {
         const mediaFiles: File[] =
-          mediaType === "video" && videoFile
-            ? [videoFile]
+          mediaType === "video"
+            ? videoDrafts.map((draft) => draft.file)
             : mediaType === "image"
               ? imageDrafts.map((draft) => draft.file)
               : []
@@ -252,7 +272,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         setIsLoading(false)
       }
     },
-    [content, imageDrafts, mediaType, onSuccess, resetDraft, toast, videoFile]
+    [content, imageDrafts, mediaType, onSuccess, resetDraft, toast, videoDrafts]
   )
 
   if (!isAuthenticated) {
@@ -260,9 +280,10 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
   }
 
   const avatarSrc = resolveUserAvatarUrl(user?.image)
-  const hasVideo = mediaType === "video" && !!videoPreviewUrl
+  const hasVideo = mediaType === "video" && videoDrafts.length > 0
   const hasImages = mediaType === "image" && imageDrafts.length > 0
   const canAddMoreImages = !hasVideo && imageDrafts.length < MAX_IMAGES
+  const canAddMoreVideos = !hasImages && videoDrafts.length < MAX_VIDEOS
   const mediaBusy = isLoading || isCompressingImage || isLoadingVideo
 
   return (
@@ -318,8 +339,8 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                   Criar publicação
                 </DialogTitle>
                 <DialogDescription className="text-xs leading-snug sm:text-sm">
-                  Partilhe texto e anexe imagens ou um vídeo (enviados com a
-                  publicação).
+                  Partilhe texto e anexe até {MAX_IMAGES} imagens ou {MAX_VIDEOS}{" "}
+                  vídeos.
                 </DialogDescription>
               </div>
             </DialogHeader>
@@ -336,26 +357,50 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
               />
 
               {hasVideo ? (
-                <div className="relative overflow-hidden rounded-xl bg-black ring-1 ring-border/50">
-                  <div className="relative aspect-video max-h-52 w-full sm:max-h-80">
-                    <video
-                      src={videoPreviewUrl}
-                      controls
-                      className="h-full w-full object-contain"
-                      preload="metadata"
-                    />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {videoDrafts.length} / {MAX_VIDEOS} vídeos
+                    </p>
+                    {videoDrafts.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={clearMedia}
+                        disabled={mediaBusy}
+                        className="text-xs font-medium text-destructive hover:underline disabled:opacity-60"
+                      >
+                        Remover todos
+                      </button>
+                    ) : null}
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon"
-                    className="absolute right-2 top-2 size-8 cursor-pointer rounded-full bg-white text-gray-500 shadow-md hover:bg-white/90 hover:text-gray-600 sm:size-9"
-                    onClick={clearMedia}
-                    disabled={mediaBusy}
-                    aria-label="Remover vídeo"
-                  >
-                    <X className="size-4" />
-                  </Button>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {videoDrafts.map((draft) => (
+                      <div
+                        key={draft.id}
+                        className="relative overflow-hidden rounded-xl bg-black ring-1 ring-border/50"
+                      >
+                        <div className="relative aspect-video max-h-52 w-full">
+                          <video
+                            src={draft.previewUrl}
+                            controls
+                            className="h-full w-full object-contain"
+                            preload="metadata"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="absolute right-1.5 top-1.5 size-7 cursor-pointer rounded-full bg-white/95 text-gray-500 shadow-sm hover:bg-white hover:text-gray-700"
+                          onClick={() => removeVideo(draft.id)}
+                          disabled={mediaBusy}
+                          aria-label="Remover vídeo"
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : hasImages ? (
                 <div className="space-y-2">
@@ -437,12 +482,12 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                   <label
                     className={cn(
                       "inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border/60 bg-background px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground sm:rounded-full sm:border-0 sm:bg-transparent sm:px-2 sm:py-1.5",
-                      (mediaBusy || hasImages) && "pointer-events-none opacity-40"
+                      !canAddMoreVideos && "pointer-events-none opacity-40"
                     )}
                     title={
                       hasImages
-                        ? "Remova as imagens para anexar um vídeo"
-                        : "Anexar vídeo"
+                        ? "Remova as imagens para anexar vídeos"
+                        : "Anexar vídeos"
                     }
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background text-primary shadow-sm ring-1 ring-border/60 sm:size-9">
@@ -452,13 +497,16 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                         <Video className="size-4" aria-hidden />
                       )}
                     </span>
-                    <span className="text-xs sm:text-sm">Vídeo</span>
+                    <span className="text-xs sm:text-sm">
+                      {hasVideo ? "Adicionar" : "Vídeos"}
+                    </span>
                     <input
                       type="file"
                       accept="video/*"
+                      multiple
                       className="sr-only"
                       onChange={onVideoFileChange}
-                      disabled={mediaBusy || hasImages}
+                      disabled={mediaBusy || !canAddMoreVideos}
                     />
                   </label>
                 </div>

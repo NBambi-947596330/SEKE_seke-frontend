@@ -26,8 +26,9 @@ import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-
 import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
 import { PostContentWithHashtags } from "@/components/post-content-with-hashtags/post-content-with-hashtags"
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
+import { PostVideoGallery } from "@/components/post-video-gallery/post-video-gallery"
 import { likePost, unlikePost } from "@/lib/likes-client"
-import { collectPostImageUrls, deletePost, fetchPostById } from "@/lib/posts-client"
+import { collectPostImageUrls, deletePost, fetchPostById, dedupeMediaUrls } from "@/lib/posts-client"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
@@ -148,6 +149,13 @@ export function ItemPostPublicacaoContent({
           image: post.image,
           media_type: post.media_type,
         })
+  const videoGalleryUrls =
+    mediaType === "video"
+      ? dedupeMediaUrls([
+          ...(post.media_urls ?? []),
+          ...(mediaUrl ? [mediaUrl] : []),
+        ])
+      : []
   const imageAlt =
     post.content.trim().slice(0, 100) || "Imagem da publicação"
 
@@ -194,15 +202,19 @@ export function ItemPostPublicacaoContent({
         </div>
       </CardHeader>
 
-      {mediaType === "video" && mediaUrl ? (
-        <div className="relative w-full aspect-video max-h-80 bg-black">
-          <video
-            src={mediaUrl}
-            controls
-            className="h-full w-full object-cover"
-            preload="metadata"
-          />
-        </div>
+      {videoGalleryUrls.length > 0 ? (
+        <PostVideoGallery
+          urls={videoGalleryUrls}
+          postId={post.id}
+          authorName={post.user.name}
+          authorAvatar={post.user.avatar}
+          liked={likedVisual}
+          likesCount={post.stats?.likes ?? 0}
+          liking={liking}
+          onLike={() => void handleLikeClick()}
+          shareUrl={`/posts/${post.id}`}
+          shareTitle={post.content}
+        />
       ) : imageGalleryUrls.length > 0 ? (
         <PostMediaGallery urls={imageGalleryUrls} alt={imageAlt} />
       ) : null}

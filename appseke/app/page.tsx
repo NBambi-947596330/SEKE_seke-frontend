@@ -44,6 +44,7 @@ import { HomeProfessionalAvailability } from '@/components/home/home-professiona
 import { HomeFindProfessionalCard } from '@/components/home/home-find-professional-card';
 import { HomeSidebarPanel } from '@/components/home/home-sidebar-panel';
 import { useAuth } from '@/lib/use-auth';
+import { useVideoFeedGallery } from '@/components/video-feed-gallery/video-feed-gallery-provider';
 
 function getSessionToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -113,6 +114,8 @@ function HomeInner() {
   const { role: accountRole, isLoading: accountRoleLoading } = useAccountRole();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const viewerUserId = useViewerUserId();
+  const videoFeed = useVideoFeedGallery();
+  const { syncFromPosts, registerLikeListener } = videoFeed;
 
   const [feedPosts, setFeedPosts] = useState<PostDetail[]>([]);
   const [feedPagination, setFeedPagination] = useState<GlobalFeedPagination>({
@@ -470,6 +473,17 @@ function HomeInner() {
       feedPage < feedPagination.total_pages) ||
     (typeof feedPagination.totalPages === 'number' &&
       feedPage < feedPagination.totalPages);
+
+  useEffect(() => {
+    syncFromPosts(feedPosts, {
+      page: feedPage,
+      hasMore: hasMorePosts,
+    });
+  }, [feedPosts, feedPage, hasMorePosts, syncFromPosts]);
+
+  useEffect(() => {
+    return registerLikeListener(handleFeedLikeResult);
+  }, [registerLikeListener, handleFeedLikeResult]);
 
   const hasMoreServiceRequests =
     serviceRequestsPagination != null &&

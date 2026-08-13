@@ -48,7 +48,14 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     image: post.image,
     media_type: post.media_type,
   })
-  const primaryImage = imageUrls[0]
+  const isVideo = post.media_type === "video"
+  const primaryImage = isVideo
+    ? post.image?.trim() || undefined
+    : imageUrls[0]
+  const mediaUrl =
+    (isVideo
+      ? imageUrls[0] || post.media_url
+      : post.media_url) ?? null
 
   const props: ItemPostProfissonalProps = {
     nome: author.name ?? "Utilizador",
@@ -58,7 +65,7 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     imagemPerfil: resolveUserAvatarUrl(author.avatar),
     imagemPost: primaryImage,
     mediaType: post.media_type ?? null,
-    mediaUrl: post.media_url ?? null,
+    mediaUrl,
     mediaUrls: imageUrls.length > 0 ? imageUrls : undefined,
     curtidas: post.stats?.likes ?? 0,
     authorUserId: author.id,
