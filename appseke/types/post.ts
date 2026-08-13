@@ -20,7 +20,16 @@ export interface CreatePostResponse {
 /** Corpo enviado em PUT /api/posts/:id */
 export interface UpdatePostRequest {
   content: string
-  /** Nova imagem (data URL, etc.); omitir para manter; `null` para remover */
+  visibility?: "public" | "private" | "followers"
+  hashtags?: string[]
+  /**
+   * URLs de média já existentes a manter (quando se misturam com ficheiros novos).
+   * O proxy PUT descarrega e reenvia como `media`.
+   */
+  keepMediaUrls?: string[]
+  /** Remover toda a média da publicação */
+  removeMedia?: boolean
+  /** @deprecated Preferir FormData `media` / keepMediaUrls */
   image?: string | null
 }
 

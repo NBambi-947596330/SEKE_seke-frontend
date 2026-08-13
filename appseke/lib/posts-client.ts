@@ -504,33 +504,66 @@ export type UpdatePostOutcome =
   | { success: false; error: string; statusCode?: number }
 
 /**
- * PUT /api/posts/:id — edita o texto da própria publicação (Authorization obrigatório).
+ * PUT /api/posts/:id — edita a própria publicação (Authorization obrigatório).
+ * Com ficheiros / keepMediaUrls / removeMedia → FormData (igual ao create).
+ * Só texto → JSON `{ content_text, visibility, hashtags }`.
  */
 export async function updatePost(
   postId: string,
   payload: UpdatePostRequest,
-  token: string
+  token: string,
+  mediaFiles: File[] = []
 ): Promise<UpdatePostOutcome> {
-  const trimmed = payload.content.trim()
-  if (!trimmed) {
+  const body = buildExternalCreatePostBody({
+    content: payload.content,
+    visibility: payload.visibility,
+    hashtags: payload.hashtags,
+  })
+
+  if (!body.content_text) {
     return {
       success: false,
       error: "O conteúdo não pode ficar vazio.",
     }
   }
 
-  const body: Record<string, unknown> = { content: trimmed }
-  if (payload.image !== undefined) {
-    body.image = payload.image
+  const keepMediaUrls = (payload.keepMediaUrls ?? [])
+    .map((u) => u.trim())
+    .filter(Boolean)
+  const hasNewFiles = mediaFiles.length > 0
+  const removeMedia = payload.removeMedia === true
+  const useFormData =
+    hasNewFiles || keepMediaUrls.length > 0 || removeMedia || payload.image !== undefined
+
+  let requestBody: BodyInit
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${token}`,
+  }
+
+  if (useFormData) {
+    const formData = buildCreatePostFormData(body, mediaFiles)
+    for (const url of keepMediaUrls) {
+      formData.append("media_urls", url)
+    }
+    if (removeMedia && !hasNewFiles && keepMediaUrls.length === 0) {
+      formData.append("remove_media", "true")
+    }
+    if (payload.image !== undefined && payload.image !== null) {
+      formData.append("image", payload.image)
+    }
+    if (payload.image === null && !hasNewFiles && keepMediaUrls.length === 0) {
+      formData.append("remove_media", "true")
+    }
+    requestBody = formData
+  } else {
+    headers["Content-Type"] = "application/json"
+    requestBody = JSON.stringify(body)
   }
 
   const res = await fetch(`${POSTS_API}/${encodeURIComponent(postId)}`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
+    headers,
+    body: requestBody,
   })
 
   const raw = await res.json().catch(() => ({}))
@@ -549,7 +582,8 @@ export async function updatePost(
   }
 
   const parsed =
-    parsePostDetail(raw) ?? parsePostDetail(raw, trimmed, postId)
+    parsePostDetail(raw) ??
+    parsePostDetail(raw, body.content_text, postId)
   if (!parsed) {
     return {
       success: false,

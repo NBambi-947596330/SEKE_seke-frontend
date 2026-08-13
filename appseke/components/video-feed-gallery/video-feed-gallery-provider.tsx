@@ -67,19 +67,13 @@ function GallerySlideVideo({
 
     if (active) {
       el.currentTime = 0
-      el.muted = muted
-      void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
+      void el.play().catch(() => {
+        /* autoplay / play pode falhar — onPause cobre o UI */
+      })
     } else {
       el.pause()
-      setPlaying(false)
     }
   }, [active, src])
-
-  useEffect(() => {
-    const el = videoRef.current
-    if (!el || !active) return
-    el.muted = muted
-  }, [muted, active])
 
   const togglePlay = async () => {
     const el = videoRef.current
@@ -87,13 +81,11 @@ function GallerySlideVideo({
     if (el.paused) {
       try {
         await el.play()
-        setPlaying(true)
       } catch {
-        setPlaying(false)
+        /* ignore */
       }
     } else {
       el.pause()
-      setPlaying(false)
     }
   }
 
@@ -108,6 +100,8 @@ function GallerySlideVideo({
         muted={muted}
         preload={active ? "auto" : "metadata"}
         onClick={() => void togglePlay()}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
       />
       {!playing ? (
         <button
