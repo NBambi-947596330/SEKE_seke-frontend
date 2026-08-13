@@ -22,22 +22,84 @@ const EXTERNAL_API_BASE_URL = (
   process.env.NEXT_PUBLIC_URL_API?.trim() || "https://api-seke-v1.onrender.com/api"
 ).replace(/\/+$/, "")
 
-const CREATE_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/createpost`
+const CREATE_POST_API = POSTS_API
 const ALL_MY_POSTS_API = `${EXTERNAL_API_BASE_URL}/posts/allmyposts`
 const PUBLISH_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/setpublished`
-const UPLOAD_MEDIA_API = new URL(
-  "/apiextern/upload",
-  `${EXTERNAL_API_BASE_URL}/`
-).toString()
 
-/** Mesmo corpo JSON que POST createpost — reutilizado em PUT setpublished. */
-function buildCreatePostRequestBody(payload: CreatePostRequest) {
+function isPostMediaReference(value: string): boolean {
+  const trimmed = value.trim()
+  return (
+    /^https?:\/\//i.test(trimmed) ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/")
+  )
+}
+
+function stripDiacritics(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "")
+}
+
+/** Label da hashtag para a API externa: `visao` (sem `#`, lowercase, sem acentos) */
+export function normalizeHashtagLabel(tag: string): string {
+  const trimmed = tag.trim()
+  if (!trimmed) return ""
+  const body = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed
+  const normalized = stripDiacritics(body.toLowerCase())
+  return normalized.replace(/[^a-z0-9_]/g, "")
+}
+
+/** Hashtag para UI / preview: `#visão` (mantém acentos do texto) */
+export function formatHashtagForDisplay(tag: string): string {
+  const trimmed = tag.trim()
+  if (!trimmed) return ""
+  const body = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed
+  const normalized = body.toLowerCase()
+  return normalized ? `#${normalized}` : ""
+}
+
+/** @deprecated Use normalizeHashtagLabel (API) ou formatHashtagForDisplay (UI) */
+export function normalizeHashtagTag(tag: string): string {
+  return formatHashtagForDisplay(tag)
+}
+
+/** Extrai hashtags do texto (#exemplo) para UI, com prefixo `#`. */
+export function extractHashtagsFromContent(text: string): string[] {
+  const matches = text.match(/#[a-zA-Z0-9_\u00C0-\u024F]+/gi) ?? []
+  return [
+    ...new Set(
+      matches.map((tag) => formatHashtagForDisplay(tag)).filter((tag) => tag.length > 0)
+    ),
+  ]
+}
+
+/** Corpo JSON para POST …/posts na API externa. */
+export function buildExternalCreatePostBody(payload: CreatePostRequest) {
+  const content_text = payload.content.trim()
+  const hashtags = (
+    payload.hashtags && payload.hashtags.length > 0
+      ? payload.hashtags
+      : extractHashtagsFromContent(content_text)
+  )
+    .map(normalizeHashtagLabel)
+    .filter((tag) => tag.length > 0)
+
+  return {
+    content_text,
+    visibility: payload.visibility ?? "public",
+    hashtags: [...new Set(hashtags)],
+  }
+}
+
+/** Corpo legado para PUT setpublished (rascunhos). */
+function buildLegacyPublishPostBody(payload: CreatePostRequest) {
   const normalizedMidia =
     Array.isArray(payload.midia) && payload.midia.length > 0
       ? payload.midia
       : payload.image
         ? ["image", payload.image]
-        : []
+        : payload.media_urls?.length
+          ? ["image", ...payload.media_urls]
+          : []
 
   return {
     title: payload.title ?? "",
@@ -45,6 +107,32 @@ function buildCreatePostRequestBody(payload: CreatePostRequest) {
     midia: normalizedMidia,
     ...(payload.image ? { image: payload.image } : {}),
   }
+}
+
+/** Extrai tipo e URLs de `midia: ["image"|"video", url1, url2, ...]`. */
+export function parseMidiaTupleUrls(midia: unknown[]): {
+  mediaType: PostDetail["media_type"]
+  urls: string[]
+} {
+  if (midia.length < 2) return { mediaType: null, urls: [] }
+
+  const first = String(midia[0]).trim().toLowerCase()
+  const urls = midia
+    .slice(1)
+    .filter(
+      (item): item is string =>
+        typeof item === "string" && isPostMediaReference(item)
+    )
+    .map((item) => item.trim())
+
+  if (first === "image" || first === "imagem") {
+    return { mediaType: "image", urls }
+  }
+  if (first === "video" || first === "vídeo") {
+    return { mediaType: "video", urls }
+  }
+
+  return { mediaType: null, urls: [] }
 }
 
 export type CreatePostOutcome =
@@ -142,50 +230,17 @@ function pickUploadedUrl(raw: unknown): string | null {
 }
 
 /**
- * Upload de ficheiro para Cloudinary via proxy interno do Next.
- * Endpoint do cliente: POST /api/upload (campo multipart: "arquivo").
+ * @deprecated Upload externo (/apiextern/upload) não é utilizado.
+ * Use imagens em data URL no POST /api/posts (`media_urls`).
  */
 export async function uploadMediaToCloudinary(
-  file: File,
-  token: string
+  _file: File,
+  _token: string
 ): Promise<UploadMediaOutcome> {
-  const formData = new FormData()
-  formData.append("arquivo", file, file.name)
-
-  const res = await fetch(UPLOAD_MEDIA_API, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  })
-
-  const raw = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const data = raw as ApiErrorResponse
-    const message =
-      typeof data.message === "string" && data.message.trim()
-        ? data.message
-        : "Não foi possível enviar o ficheiro."
-    return {
-      success: false,
-      error: message,
-      statusCode: res.status,
-    }
-  }
-
-  const url = pickUploadedUrl(raw)
-  if (!url) {
-    return {
-      success: false,
-      error: "Upload concluído, mas a API não devolveu URL do ficheiro.",
-      statusCode: res.status,
-    }
-  }
-
   return {
-    success: true,
-    data: { url },
+    success: false,
+    error:
+      "Upload externo desactivado. As imagens são enviadas junto com a publicação.",
   }
 }
 
@@ -197,13 +252,15 @@ export async function createPost(
   payload: CreatePostRequest,
   token: string
 ): Promise<CreatePostOutcome> {
+  const body = buildExternalCreatePostBody(payload)
+
   const res = await fetch(CREATE_POST_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(buildCreatePostRequestBody(payload)),
+    body: JSON.stringify(body),
   })
 
   const raw = await res.json().catch(() => ({}))
@@ -271,7 +328,7 @@ export async function publishPost(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(buildCreatePostRequestBody(payload)),
+    body: JSON.stringify(buildLegacyPublishPostBody(payload)),
   })
 
   const raw = await res.json().catch(() => ({}))
@@ -563,12 +620,11 @@ function parsePostDetail(
   if (apiMediaType === "video" || apiMediaType === "vídeo") mediaType = "video"
 
   if (Array.isArray(o.midia) && o.midia.length >= 2) {
-    const first = o.midia[0]
-    const second = o.midia[1]
-    if ((first === "image" || first === "video") && typeof second === "string" && second.trim()) {
-      mediaType = first
-      mediaUrl = second.trim()
-      if (mediaUrls.length === 0) mediaUrls = [mediaUrl]
+    const parsed = parseMidiaTupleUrls(o.midia)
+    if (parsed.urls.length > 0) {
+      mediaType = parsed.mediaType ?? mediaType
+      mediaUrl = parsed.urls[0]
+      if (mediaUrls.length === 0) mediaUrls = parsed.urls
     }
   }
 

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ApiErrorResponse } from "@/types/auth"
+import {
+  buildExternalCreatePostBody,
+  extractHashtagsFromContent,
+  normalizeHashtagLabel,
+} from "@/lib/posts-client"
+import type { CreatePostRequest } from "@/types/post"
 
 const getBaseUrl = (): string => {
   const url = process.env.NEXT_PUBLIC_URL_API?.trim()
@@ -15,12 +21,11 @@ const toNonEmptyString = (value: unknown): string | null => {
   return trimmed ? trimmed : null
 }
 
-/** POST /api/posts — proxy para criar publicação na API externa */
+/** POST /api/posts — proxy para POST …/posts na API externa */
 export async function POST(request: NextRequest) {
   try {
     const baseUrl = getBaseUrl()
-    const createPostEndpoint = `${baseUrl}/posts/posts/createpost`
-    const legacyPostsEndpoint = `${baseUrl}/posts`
+    const postsEndpoint = `${baseUrl}/posts`
 
     const authorization = request.headers.get("authorization")
 
@@ -34,12 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => null) as
-      | {
-          title?: string
-          content?: string
-          midia?: unknown[]
-          image?: string
-        }
+      | (CreatePostRequest & { content_text?: string })
       | null
 
     if (!body) {
@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const content = toNonEmptyString(body.content)
+    const content =
+      toNonEmptyString(body.content_text) ?? toNonEmptyString(body.content)
     if (!content) {
       return NextResponse.json(
         { message: "O conteúdo da publicação é obrigatório." } satisfies ApiErrorResponse,
@@ -57,59 +58,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const title = typeof body.title === "string" ? body.title.trim() : ""
-    const normalizedMidia = Array.isArray(body.midia)
-      ? body.midia.filter((item): item is string => typeof item === "string" && item.trim() !== "")
-      : []
-
-    if (normalizedMidia.length === 0) {
-      const image = toNonEmptyString(body.image)
-      if (image) {
-        normalizedMidia.push("image", image)
-      }
-    }
-
-    const payload: { title: string; content: string; midia: string[] } = {
-      title,
+    const payload: CreatePostRequest = {
       content,
-      midia: normalizedMidia,
+      visibility:
+        body.visibility === "private" ||
+        body.visibility === "followers" ||
+        body.visibility === "public"
+          ? body.visibility
+          : "public",
+      hashtags: Array.isArray(body.hashtags)
+        ? body.hashtags
+            .filter(
+              (tag): tag is string => typeof tag === "string" && tag.trim() !== ""
+            )
+            .map(normalizeHashtagLabel)
+            .filter((tag) => tag.length > 0)
+        : extractHashtagsFromContent(content).map(normalizeHashtagLabel),
     }
 
-    let res = await fetch(createPostEndpoint, {
+    const externalPayload = buildExternalCreatePostBody(payload)
+
+    const res = await fetch(postsEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: authorization,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(externalPayload),
     })
-
-    if (res.status === 404 || res.status === 405) {
-      const legacyPayload: { content: string; image?: string } = {
-        content,
-      }
-      if (normalizedMidia.length >= 2 && normalizedMidia[0].toLowerCase() === "image") {
-        const legacyImage = toNonEmptyString(normalizedMidia[1])
-        if (legacyImage) {
-          legacyPayload.image = legacyImage
-        }
-      }
-
-      res = await fetch(legacyPostsEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authorization,
-        },
-        body: JSON.stringify(legacyPayload),
-      })
-    }
 
     const data = await res.json().catch(() => ({}))
 
     if (!res.ok) {
       const message =
         (data && typeof data.message === "string" && data.message) ||
+        (data &&
+          typeof data === "object" &&
+          "error" in data &&
+          typeof (data as { error?: unknown }).error === "string" &&
+          (data as { error: string }).error) ||
         "Não foi possível criar a publicação."
 
       return NextResponse.json(

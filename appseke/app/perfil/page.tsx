@@ -59,7 +59,6 @@ import {
   NetworkListSkeleton,
   ProfileLayoutSkeleton,
 } from "@/components/profile/profile-layout-skeleton"
-import { uploadMediaToCloudinary } from "@/lib/posts-client"
 import {
   buildUpdateProfilePayload,
   extractRatingFromProfile,
@@ -1373,24 +1372,9 @@ export default function PerfilPage() {
           if (directUpload.success) {
             avatarUrl = directUpload.data.url
           } else {
-            const upload = await uploadMediaToCloudinary(file, token)
-            if (!upload.success) {
-              toast.error(directUpload.error)
-              setAvatarPreviewSrc("")
-              return
-            }
-
-            const professionalAvatarUpdate = await updateProfessionalAvatarUrl(
-              resolvedProfessionalId,
-              token,
-              upload.data.url
-            )
-            if (!professionalAvatarUpdate.success) {
-              toast.error(professionalAvatarUpdate.error)
-              setAvatarPreviewSrc("")
-              return
-            }
-            avatarUrl = professionalAvatarUpdate.data.url
+            toast.error(directUpload.error)
+            setAvatarPreviewSrc("")
+            return
           }
 
           const refreshedUrl = await refreshProfileSnapshot(token, userId)
@@ -1406,16 +1390,22 @@ export default function PerfilPage() {
             setAvatarPreviewSrc("")
           }
         } else {
-          const upload = await uploadMediaToCloudinary(file, token)
-          if (!upload.success) {
-            toast.error(upload.error)
+          let avatarDataUrl: string
+          try {
+            avatarDataUrl = await compressImageToJpegDataUrl(file)
+          } catch (err) {
+            toast.error(
+              err instanceof Error
+                ? err.message
+                : "Não foi possível preparar a imagem."
+            )
             setAvatarPreviewSrc("")
             return
           }
 
           const avatarUpdate = await updateProfileAvatar(token, {
             user_id: userId,
-            avatarUrl: upload.data.url,
+            avatarUrl: avatarDataUrl,
           })
           if (!avatarUpdate.success) {
             toast.error(avatarUpdate.error)

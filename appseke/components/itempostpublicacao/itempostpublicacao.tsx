@@ -24,6 +24,7 @@ import { DeletePostConfirmDialog } from "@/components/delete-post-confirm-dialog
 import { PostEditModal } from "@/components/post-edit-modal/post-edit-modal"
 import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-menu"
 import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
+import { PostContentWithHashtags } from "@/components/post-content-with-hashtags/post-content-with-hashtags"
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
 import { likePost, unlikePost } from "@/lib/likes-client"
 import { deletePost, fetchPostById } from "@/lib/posts-client"
@@ -209,8 +210,8 @@ export function ItemPostPublicacaoContent({
       ) : null}
 
       <CardContent className="p-4 space-y-3">
-        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-          {post.content}
+        <p className="text-sm text-foreground leading-relaxed">
+          <PostContentWithHashtags text={post.content} />
         </p>
       </CardContent>
 

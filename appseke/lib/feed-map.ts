@@ -1,4 +1,5 @@
 import type { ItemPostProfissonalProps } from "@/components/itempostprofissional/itempostprofissional"
+import { parseMidiaTupleUrls } from "@/lib/posts-client"
 import { resolveUserAvatarUrl } from "@/lib/user-avatar"
 import type { PostDetail, PostRecord } from "@/types/post"
 import type { ProfissionalFeedRow } from "@/types/home-feed"
@@ -121,23 +122,30 @@ export function postRecordToPostDetail(post: PostRecord): PostDetail | null {
   if (apiMediaType === "video" || apiMediaType === "vídeo") mediaType = "video"
 
   if (Array.isArray(raw.midia) && raw.midia.length >= 2) {
-    const first = String(raw.midia[0]).trim().toLowerCase()
-    const second = typeof raw.midia[1] === "string" ? raw.midia[1].trim() : ""
-    if (second) {
-      if (first === "image" || first === "imagem") {
-        mediaType = "image"
-        mediaUrl = second
-      } else if (first === "video" || first === "vídeo") {
-        mediaType = "video"
-        mediaUrl = second
-      } else if (/^https?:\/\//i.test(second)) {
-        const inferred = inferMediaKindFromUrl(second)
-        if (inferred) {
-          mediaType = inferred
+    const parsed = parseMidiaTupleUrls(raw.midia)
+    if (parsed.urls.length > 0) {
+      mediaType = parsed.mediaType ?? mediaType
+      mediaUrl = parsed.urls[0]
+      if (mediaUrls.length === 0) mediaUrls = parsed.urls
+    } else {
+      const first = String(raw.midia[0]).trim().toLowerCase()
+      const second = typeof raw.midia[1] === "string" ? raw.midia[1].trim() : ""
+      if (second) {
+        if (first === "image" || first === "imagem") {
+          mediaType = "image"
           mediaUrl = second
+        } else if (first === "video" || first === "vídeo") {
+          mediaType = "video"
+          mediaUrl = second
+        } else if (/^https?:\/\//i.test(second)) {
+          const inferred = inferMediaKindFromUrl(second)
+          if (inferred) {
+            mediaType = inferred
+            mediaUrl = second
+          }
         }
+        if (mediaUrl && mediaUrls.length === 0) mediaUrls = [mediaUrl]
       }
-      if (mediaUrl && mediaUrls.length === 0) mediaUrls = [mediaUrl]
     }
   }
 

@@ -1,11 +1,15 @@
-/** Corpo enviado em POST /api/posts */
+/** Corpo enviado em POST /api/posts (proxy → POST …/posts na API externa) */
 export interface CreatePostRequest {
-  title?: string
+  /** Texto da publicação (mapeado para `content_text`) */
   content: string
-  /** Formato novo da API: ex. ["video", "https://..."] */
+  visibility?: "public" | "private" | "followers"
+  hashtags?: string[]
+  /** Campos legados — ignorados em POST /posts; usados em rascunhos / publishPost */
+  title?: string
   midia?: string[]
-  /** Opcional: URL, base64 ou data URL, conforme a API */
   image?: string
+  media_urls?: string[]
+  media_type?: "image" | "video"
 }
 
 /** Resposta de sucesso { post } */

@@ -10,6 +10,7 @@ import { DeletePostConfirmDialog } from "@/components/delete-post-confirm-dialog
 import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-tooltip"
 import { PostMeatballMenu } from "@/components/post-meatball-menu/post-meatball-menu"
 import { PostEditModal } from "@/components/post-edit-modal/post-edit-modal"
+import { PostExpandableContent } from "@/components/post-expandable-content/post-expandable-content"
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
 import { useToast } from "@/components/ui/toaster"
 import { followUser, unfollowUser } from "@/lib/follow-client"
@@ -336,13 +337,13 @@ export default function ItemPostProfissonal({
     <div className="bg-card text-card-foreground rounded-md border border-gray-100 overflow-hidden">
       <div className="p-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 bg-muted rounded-full overflow-hidden shrink-0">
+          <div className="relative size-10 shrink-0 overflow-hidden rounded-full bg-muted">
             <Image
               src={avatarSrc}
               alt={nome}
-              width={40}
-              height={40}
-              className="object-cover w-full h-full"
+              fill
+              sizes="40px"
+              className="object-cover object-center"
               unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
             />
           </div>
@@ -428,17 +429,7 @@ export default function ItemPostProfissonal({
         <h2 className="text-[15px] sm:text-base font-semibold text-foreground leading-snug tracking-tight">
           {titulo}
         </h2>
-        <div>
-          <p className="text-sm text-foreground/90 leading-relaxed line-clamp-4 whitespace-pre-wrap">
-            {descricao}
-          </p>
-          <button
-            type="button"
-            className="text-xs font-medium text-muted-foreground hover:text-foreground mt-1 transition-colors"
-          >
-            ver mais
-          </button>
-        </div>
+        <PostExpandableContent text={descricao} />
       </div>
 
       {resolvedVideoSrc ? (
