@@ -1,6 +1,6 @@
 import type { ApiErrorResponse } from "@/types/auth"
 import { parseLikedByMeFromPostLike } from "@/lib/parse-liked-by-me"
-import { parseMidiaTupleUrls } from "@/lib/posts-client"
+import { parseMidiaTupleUrls, dedupeMediaUrls } from "@/lib/posts-client"
 import type { PostDetail } from "@/types/post"
 import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
@@ -57,7 +57,8 @@ function pickMediaUrls(o: Record<string, unknown>): string[] {
     const urls = raw
       .filter((u): u is string => typeof u === "string" && u.trim() !== "")
       .map((u) => u.trim())
-    if (urls.length > 0) return urls
+    const deduped = dedupeMediaUrls(urls)
+    if (deduped.length > 0) return deduped
   }
   return []
 }

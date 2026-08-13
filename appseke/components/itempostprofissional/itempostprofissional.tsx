@@ -15,7 +15,7 @@ import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gal
 import { useToast } from "@/components/ui/toaster"
 import { followUser, unfollowUser } from "@/lib/follow-client"
 import { likePost, unlikePost } from "@/lib/likes-client"
-import { deletePost } from "@/lib/posts-client"
+import { deletePost, dedupeMediaUrls } from "@/lib/posts-client"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
 import { cn } from "@/lib/utils"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
@@ -236,9 +236,11 @@ export default function ItemPostProfissonal({
   const normalizedImagemPost = imagemPost
     ? normalizeMediaSrc(imagemPost)
     : null
-  const galleryUrls = (mediaUrls ?? [])
-    .map((u) => normalizeMediaSrc(u))
-    .filter((u): u is string => Boolean(u))
+  const galleryUrls = dedupeMediaUrls(
+    (mediaUrls ?? [])
+      .map((u) => normalizeMediaSrc(u))
+      .filter((u): u is string => Boolean(u))
+  )
   const resolvedImageSrc =
     mediaType === "image" || galleryUrls.length > 0 || (!mediaType && normalizedImagemPost)
       ? normalizedMediaUrl ?? normalizedImagemPost ?? galleryUrls[0] ?? null
@@ -247,7 +249,7 @@ export default function ItemPostProfissonal({
     galleryUrls.length > 0
       ? galleryUrls
       : resolvedImageSrc
-        ? [resolvedImageSrc]
+        ? dedupeMediaUrls([resolvedImageSrc])
         : []
   const resolvedVideoSrc = mediaType === "video" ? normalizedMediaUrl : null
   const videoPoster =

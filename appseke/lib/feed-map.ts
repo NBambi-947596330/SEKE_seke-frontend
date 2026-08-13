@@ -1,5 +1,5 @@
 import type { ItemPostProfissonalProps } from "@/components/itempostprofissional/itempostprofissional"
-import { parseMidiaTupleUrls } from "@/lib/posts-client"
+import { collectPostImageUrls, dedupeMediaUrls, parseMidiaTupleUrls } from "@/lib/posts-client"
 import { resolveUserAvatarUrl } from "@/lib/user-avatar"
 import type { PostDetail, PostRecord } from "@/types/post"
 import type { ProfissionalFeedRow } from "@/types/home-feed"
@@ -42,12 +42,13 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     typeof post.title === "string" && post.title.trim()
       ? post.title.trim()
       : deriveTitulo(post.content)
-  const imageUrls =
-    post.media_urls?.filter((u) => typeof u === "string" && u.trim()) ?? []
-  const primaryImage =
-    (post.media_type === "image" ? post.media_url : post.image)?.trim() ||
-    imageUrls[0] ||
-    undefined
+  const imageUrls = collectPostImageUrls({
+    media_urls: post.media_urls,
+    media_url: post.media_url,
+    image: post.image,
+    media_type: post.media_type,
+  })
+  const primaryImage = imageUrls[0]
 
   const props: ItemPostProfissonalProps = {
     nome: author.name ?? "Utilizador",
@@ -58,12 +59,7 @@ export function postDetailToProfissionalFeedRow(post: PostDetail): ProfissionalF
     imagemPost: primaryImage,
     mediaType: post.media_type ?? null,
     mediaUrl: post.media_url ?? null,
-    mediaUrls:
-      imageUrls.length > 0
-        ? imageUrls
-        : primaryImage
-          ? [primaryImage]
-          : undefined,
+    mediaUrls: imageUrls.length > 0 ? imageUrls : undefined,
     curtidas: post.stats?.likes ?? 0,
     authorUserId: author.id,
     likedByMe: post.liked_by_me === true,
@@ -109,9 +105,9 @@ export function postRecordToPostDetail(post: PostRecord): PostDetail | null {
   let mediaUrls: string[] = []
 
   if (Array.isArray(raw.media_urls)) {
-    mediaUrls = raw.media_urls
-      .filter((u): u is string => typeof u === "string" && u.trim() !== "")
-      .map((u) => u.trim())
+    mediaUrls = dedupeMediaUrls(
+      raw.media_urls.filter((u): u is string => typeof u === "string" && u.trim() !== "")
+    )
   }
 
   const apiMediaType =
@@ -159,7 +155,23 @@ export function postRecordToPostDetail(post: PostRecord): PostDetail | null {
   if (!mediaUrl && image) {
     mediaType = mediaType ?? "image"
     mediaUrl = image
-    if (mediaUrls.length === 0) mediaUrls = [image]
+    if (mediaUrls.length === 0) mediaUrls = dedupeMediaUrls([image])
+  }
+
+  mediaUrls = collectPostImageUrls({
+    media_urls: mediaUrls,
+    media_url: mediaUrl,
+    image,
+    media_type: mediaType,
+  })
+  if (mediaUrls.length > 0) {
+    mediaUrl = mediaUrls[0]
+    if (!mediaType) {
+      mediaType = inferMediaKindFromUrl(mediaUrls[0]) ?? "image"
+    }
+  } else if (!mediaUrl && image) {
+    mediaType = mediaType ?? "image"
+    mediaUrl = image
   }
 
   let user: PostDetail["user"] = {

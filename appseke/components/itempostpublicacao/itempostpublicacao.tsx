@@ -27,11 +27,11 @@ import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-too
 import { PostContentWithHashtags } from "@/components/post-content-with-hashtags/post-content-with-hashtags"
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
 import { likePost, unlikePost } from "@/lib/likes-client"
-import { deletePost, fetchPostById } from "@/lib/posts-client"
+import { collectPostImageUrls, deletePost, fetchPostById } from "@/lib/posts-client"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
+import { cn } from "@/lib/utils"
 import { sameUserId, useViewerUserId } from "@/lib/viewer-user-id"
 import type { LikePostResponse, PostDetail } from "@/types/post"
-import { cn } from "@/lib/utils"
 
 function resolveAuthToken(accessToken: string | null | undefined): string | null {
   if (accessToken !== undefined) return accessToken
@@ -139,17 +139,15 @@ export function ItemPostPublicacaoContent({
   const avatarSrc = resolveUserAvatarUrl(post.user.avatar)
   const mediaType = post.media_type ?? (post.image ? "image" : null)
   const mediaUrl = post.media_url?.trim() || post.image?.trim() || ""
-  const galleryUrls = (post.media_urls ?? [])
-    .map((u) => u.trim())
-    .filter(Boolean)
   const imageGalleryUrls =
-    mediaType === "image" || galleryUrls.length > 0
-      ? galleryUrls.length > 0
-        ? galleryUrls
-        : mediaUrl
-          ? [mediaUrl]
-          : []
-      : []
+    mediaType === "video"
+      ? []
+      : collectPostImageUrls({
+          media_urls: post.media_urls,
+          media_url: post.media_url,
+          image: post.image,
+          media_type: post.media_type,
+        })
   const imageAlt =
     post.content.trim().slice(0, 100) || "Imagem da publicação"
 

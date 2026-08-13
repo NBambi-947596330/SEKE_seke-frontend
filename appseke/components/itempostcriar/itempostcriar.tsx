@@ -112,10 +112,32 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         toast.error("Selecione um ficheiro de vídeo.")
         return
       }
-      toast.error(
-        "Upload de vídeo indisponível. Anexe imagens ou publique apenas texto."
-      )
-      return
+
+      if (file.size > MAX_VIDEO_BYTES) {
+        toast.error("O vídeo deve ter no máximo 80 MB.")
+        return
+      }
+
+      setIsLoadingVideo(true)
+      try {
+        setImageDrafts((prev) => {
+          revokeImageDrafts(prev)
+          return []
+        })
+        if (videoPreviewUrl) {
+          URL.revokeObjectURL(videoPreviewUrl)
+        }
+
+        setVideoFile(file)
+        setVideoPreviewUrl(URL.createObjectURL(file))
+        setMediaType("video")
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Não foi possível processar o vídeo."
+        toast.error(msg)
+      } finally {
+        setIsLoadingVideo(false)
+      }
     },
     [revokeImageDrafts, toast, videoPreviewUrl]
   )
@@ -200,12 +222,12 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
 
       setIsLoading(true)
       try {
-        if (mediaType === "image" && imageDrafts.length > 0) {
-          toast.error(
-            "A API actual só aceita texto. Remova as imagens para publicar."
-          )
-          return
-        }
+        const mediaFiles: File[] =
+          mediaType === "video" && videoFile
+            ? [videoFile]
+            : mediaType === "image"
+              ? imageDrafts.map((draft) => draft.file)
+              : []
 
         const createPayload = {
           content: fullContent,
@@ -213,7 +235,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
           hashtags: extractHashtagsFromContent(fullContent),
         }
 
-        const result = await createPost(createPayload, token)
+        const result = await createPost(createPayload, token, mediaFiles)
 
         if (result.success) {
           toast.success("Publicação criada com sucesso.")
@@ -230,7 +252,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
         setIsLoading(false)
       }
     },
-    [content, imageDrafts, mediaType, onSuccess, resetDraft, toast]
+    [content, imageDrafts, mediaType, onSuccess, resetDraft, toast, videoFile]
   )
 
   if (!isAuthenticated) {
@@ -296,7 +318,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                   Criar publicação
                 </DialogTitle>
                 <DialogDescription className="text-xs leading-snug sm:text-sm">
-                  Partilhe texto e anexe até {MAX_IMAGES} imagens (enviadas com a
+                  Partilhe texto e anexe imagens ou um vídeo (enviados com a
                   publicação).
                 </DialogDescription>
               </div>
@@ -415,9 +437,13 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                   <label
                     className={cn(
                       "inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-border/60 bg-background px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground sm:rounded-full sm:border-0 sm:bg-transparent sm:px-2 sm:py-1.5",
-                      "pointer-events-none opacity-40"
+                      (mediaBusy || hasImages) && "pointer-events-none opacity-40"
                     )}
-                    title="Upload de vídeo indisponível"
+                    title={
+                      hasImages
+                        ? "Remova as imagens para anexar um vídeo"
+                        : "Anexar vídeo"
+                    }
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background text-primary shadow-sm ring-1 ring-border/60 sm:size-9">
                       {isLoadingVideo ? (
@@ -432,7 +458,7 @@ export function ItemPostCriar({ onSuccess, className }: ItemPostCriarProps) {
                       accept="video/*"
                       className="sr-only"
                       onChange={onVideoFileChange}
-                      disabled
+                      disabled={mediaBusy || hasImages}
                     />
                   </label>
                 </div>

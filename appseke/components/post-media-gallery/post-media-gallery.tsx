@@ -10,6 +10,7 @@ import {
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { dedupeMediaUrls } from "@/lib/posts-client"
 
 /** Placeholder em `public/` quando a URL do storage falha (404 / NoSuchKey). */
 export const POST_IMAGE_NOT_FOUND = "/seke_imagem_not_found.png"
@@ -164,9 +165,11 @@ export function PostMediaGallery({
   alt = "Imagem da publicação",
   className,
 }: PostMediaGalleryProps) {
-  const images = urls
-    .map(normalizeMediaSrc)
-    .filter((u): u is string => Boolean(u))
+  const images = dedupeMediaUrls(
+    urls
+      .map(normalizeMediaSrc)
+      .filter((u): u is string => Boolean(u))
+  )
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 

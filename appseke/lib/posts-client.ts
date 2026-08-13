@@ -35,6 +35,70 @@ function isPostMediaReference(value: string): boolean {
   )
 }
 
+/** Chave estável para comparar URLs de media (evita duplicados). */
+function mediaUrlDedupeKey(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return ""
+  if (trimmed.startsWith("data:")) return trimmed
+  if (trimmed.startsWith("/")) return trimmed
+
+  try {
+    const href = new URL(trimmed.startsWith("//") ? `https:${trimmed}` : trimmed).href
+    return href.endsWith("/") ? href.slice(0, -1) : href
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
+/** Remove URLs de media repetidas mantendo a ordem. */
+export function dedupeMediaUrls(urls: Iterable<string>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const raw of urls) {
+    if (typeof raw !== "string") continue
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    const key = mediaUrlDedupeKey(trimmed)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    result.push(trimmed)
+  }
+
+  return result
+}
+
+/** Junta `media_urls`, `media_url` e `image` numa lista única (imagens). */
+export function collectPostImageUrls(source: {
+  media_urls?: string[] | null
+  media_url?: string | null
+  image?: string | null
+  media_type?: string | null
+}): string[] {
+  const mediaType =
+    typeof source.media_type === "string"
+      ? source.media_type.trim().toLowerCase()
+      : ""
+  const isVideo = mediaType === "video" || mediaType === "vídeo"
+
+  if (isVideo) {
+    return dedupeMediaUrls(source.media_urls ?? [])
+  }
+
+  const candidates: string[] = []
+  if (Array.isArray(source.media_urls)) {
+    candidates.push(...source.media_urls)
+  }
+  if (typeof source.media_url === "string") {
+    candidates.push(source.media_url)
+  }
+  if (typeof source.image === "string") {
+    candidates.push(source.image)
+  }
+
+  return dedupeMediaUrls(candidates)
+}
+
 function stripDiacritics(value: string): string {
   return value.normalize("NFD").replace(/\p{M}/gu, "")
 }
@@ -72,7 +136,7 @@ export function extractHashtagsFromContent(text: string): string[] {
   ]
 }
 
-/** Corpo JSON para POST …/posts na API externa. */
+/** Corpo JSON para POST …/posts na API externa (sem ficheiros). */
 export function buildExternalCreatePostBody(payload: CreatePostRequest) {
   const content_text = payload.content.trim()
   const hashtags = (
@@ -88,6 +152,88 @@ export function buildExternalCreatePostBody(payload: CreatePostRequest) {
     visibility: payload.visibility ?? "public",
     hashtags: [...new Set(hashtags)],
   }
+}
+
+export type ExternalCreatePostBody = ReturnType<typeof buildExternalCreatePostBody>
+
+/** FormData para POST …/posts com imagens/vídeo no campo `media`. */
+export function buildCreatePostFormData(
+  body: ExternalCreatePostBody,
+  mediaFiles: File[]
+): FormData {
+  const formData = new FormData()
+  formData.append("content_text", body.content_text)
+  formData.append("visibility", body.visibility)
+  appendHashtagsToFormData(formData, body.hashtags)
+
+  for (const file of mediaFiles) {
+    formData.append("media", file)
+  }
+
+  return formData
+}
+
+/** Adiciona cada hashtag como campo separado no FormData. */
+export function appendHashtagsToFormData(formData: FormData, hashtags: string[]) {
+  for (const tag of hashtags) {
+    formData.append("hashtags", tag)
+  }
+}
+
+/** Lê hashtags de FormData (`hashtags` repetido ou JSON legado num único campo). */
+export function parseHashtagsFromFormData(formData: FormData, content: string): string[] {
+  const entries = formData
+    .getAll("hashtags")
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+
+  if (entries.length === 0) {
+    return extractHashtagsFromContent(content).map(normalizeHashtagLabel)
+  }
+
+  if (entries.length === 1 && entries[0].trim().startsWith("[")) {
+    return parseHashtagsJsonField(entries[0], content)
+  }
+
+  return [
+    ...new Set(
+      entries.map(normalizeHashtagLabel).filter((tag) => tag.length > 0)
+    ),
+  ]
+}
+
+/** Interpreta um único campo `hashtags` enviado como JSON string (formato legado). */
+function parseHashtagsJsonField(value: string, content: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      return [
+        ...new Set(
+          parsed
+            .filter(
+              (tag): tag is string => typeof tag === "string" && tag.trim() !== ""
+            )
+            .map(normalizeHashtagLabel)
+            .filter((tag) => tag.length > 0)
+        ),
+      ]
+    }
+  } catch {
+    /* fallback abaixo */
+  }
+
+  return extractHashtagsFromContent(content).map(normalizeHashtagLabel)
+}
+
+/** @deprecated Use parseHashtagsFromFormData */
+export function parseHashtagsFormField(
+  value: FormDataEntryValue | null,
+  content: string
+): string[] {
+  if (typeof value === "string" && value.trim()) {
+    return parseHashtagsJsonField(value, content)
+  }
+
+  return extractHashtagsFromContent(content).map(normalizeHashtagLabel)
 }
 
 /** Corpo legado para PUT setpublished (rascunhos). */
@@ -245,22 +391,28 @@ export async function uploadMediaToCloudinary(
 }
 
 /**
- * Cria uma publicação (texto + imagem opcional em base64/data URL).
+ * Cria uma publicação (texto + media opcional via FormData).
  * Usa o token em sessionStorage (mesmo fluxo do login por credenciais).
  */
 export async function createPost(
   payload: CreatePostRequest,
-  token: string
+  token: string,
+  mediaFiles: File[] = []
 ): Promise<CreatePostOutcome> {
   const body = buildExternalCreatePostBody(payload)
+  const hasMedia = mediaFiles.length > 0
 
   const res = await fetch(CREATE_POST_API, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
+    headers: hasMedia
+      ? { Authorization: `Bearer ${token}` }
+      : {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+    body: hasMedia
+      ? buildCreatePostFormData(body, mediaFiles)
+      : JSON.stringify(body),
   })
 
   const raw = await res.json().catch(() => ({}))
@@ -609,9 +761,9 @@ function parsePostDetail(
   let mediaUrls: string[] = []
 
   if (Array.isArray(o.media_urls)) {
-    mediaUrls = o.media_urls
-      .filter((u): u is string => typeof u === "string" && u.trim() !== "")
-      .map((u) => u.trim())
+    mediaUrls = dedupeMediaUrls(
+      o.media_urls.filter((u): u is string => typeof u === "string" && u.trim() !== "")
+    )
   }
 
   const apiMediaType =
@@ -636,7 +788,16 @@ function parsePostDetail(
   if (!mediaUrl && image) {
     mediaType = mediaType ?? "image"
     mediaUrl = image
-    if (mediaUrls.length === 0) mediaUrls = [image]
+    if (mediaUrls.length === 0) mediaUrls = dedupeMediaUrls([image])
+  }
+
+  mediaUrls = dedupeMediaUrls([
+    ...mediaUrls,
+    ...(mediaType === "image" && mediaUrl ? [mediaUrl] : []),
+    ...(mediaType === "image" && image ? [image] : []),
+  ])
+  if (mediaUrls.length > 0 && !mediaUrl) {
+    mediaUrl = mediaUrls[0]
   }
 
   const detail: PostDetail = {

@@ -4,6 +4,8 @@ import {
   buildExternalCreatePostBody,
   extractHashtagsFromContent,
   normalizeHashtagLabel,
+  parseHashtagsFromFormData,
+  appendHashtagsToFormData,
 } from "@/lib/posts-client"
 import type { CreatePostRequest } from "@/types/post"
 
@@ -21,6 +23,31 @@ const toNonEmptyString = (value: unknown): string | null => {
   return trimmed ? trimmed : null
 }
 
+function resolveApiErrorMessage(data: unknown): string {
+  if (data && typeof data === "object") {
+    if ("message" in data && typeof data.message === "string" && data.message) {
+      return data.message
+    }
+    if ("error" in data && typeof data.error === "string" && data.error) {
+      return data.error
+    }
+  }
+  return "Não foi possível criar a publicação."
+}
+
+async function forwardCreatePostResponse(res: Response) {
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    return NextResponse.json(
+      { message: resolveApiErrorMessage(data) } satisfies ApiErrorResponse,
+      { status: res.status }
+    )
+  }
+
+  return NextResponse.json(data)
+}
+
 /** POST /api/posts — proxy para POST …/posts na API externa */
 export async function POST(request: NextRequest) {
   try {
@@ -36,6 +63,57 @@ export async function POST(request: NextRequest) {
         } satisfies ApiErrorResponse,
         { status: 401 }
       )
+    }
+
+    const contentType = request.headers.get("content-type") ?? ""
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
+
+      const content =
+        toNonEmptyString(formData.get("content_text")?.toString()) ??
+        toNonEmptyString(formData.get("content")?.toString())
+
+      if (!content) {
+        return NextResponse.json(
+          { message: "O conteúdo da publicação é obrigatório." } satisfies ApiErrorResponse,
+          { status: 400 }
+        )
+      }
+
+      const visibilityRaw = formData.get("visibility")?.toString()
+      const visibility =
+        visibilityRaw === "private" ||
+        visibilityRaw === "followers" ||
+        visibilityRaw === "public"
+          ? visibilityRaw
+          : "public"
+
+      const hashtags = parseHashtagsFromFormData(formData, content)
+
+      const outgoing = new FormData()
+      outgoing.append("content_text", content)
+      outgoing.append("visibility", visibility)
+      appendHashtagsToFormData(outgoing, hashtags)
+
+      const seenMedia = new Set<string>()
+      for (const entry of formData.getAll("media")) {
+        if (entry instanceof Blob && entry.size > 0) {
+          const filename = entry instanceof File ? entry.name : "media"
+          const mediaKey = `${filename}:${entry.size}:${entry.type}`
+          if (seenMedia.has(mediaKey)) continue
+          seenMedia.add(mediaKey)
+          outgoing.append("media", entry, filename)
+        }
+      }
+
+      const res = await fetch(postsEndpoint, {
+        method: "POST",
+        headers: { Authorization: authorization },
+        body: outgoing,
+      })
+
+      return forwardCreatePostResponse(res)
     }
 
     const body = await request.json().catch(() => null) as
@@ -87,25 +165,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(externalPayload),
     })
 
-    const data = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      const message =
-        (data && typeof data.message === "string" && data.message) ||
-        (data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error?: unknown }).error === "string" &&
-          (data as { error: string }).error) ||
-        "Não foi possível criar a publicação."
-
-      return NextResponse.json(
-        { message } satisfies ApiErrorResponse,
-        { status: res.status }
-      )
-    }
-
-    return NextResponse.json(data)
+    return forwardCreatePostResponse(res)
   } catch (err) {
     if (err instanceof Error && err.message.includes("NEXT_PUBLIC_URL_API")) {
       return NextResponse.json(
