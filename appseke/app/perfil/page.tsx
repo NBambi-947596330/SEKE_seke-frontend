@@ -68,6 +68,7 @@ import {
   updateProfile,
   updateProfileAvatar,
   updateProfileLocation,
+  uploadProfileAvatarFile,
 } from "@/lib/profile-client"
 import type { ProfileRatingSummary, ProfileStats } from "@/types/auth"
 import { getClientGeolocation, type GeoCoords } from "@/lib/geolocation"
@@ -89,11 +90,6 @@ import { MyServiceCard } from "@/components/itemprofileservice/my-service-card"
 import { fetchMyMarketplaceServices } from "@/lib/marketplace-client"
 import { deleteService, toggleService } from "@/lib/services-client"
 import { isProfessionalUser } from "@/lib/is-professional-user"
-import {
-  resolveProfessionalIdForUser,
-  updateProfessionalAvatarUrl,
-  uploadProfessionalAvatarFile,
-} from "@/lib/professionals-client"
 import {
   extractProfessionalProfileFields,
   fetchProfessionalProfile,
@@ -1000,29 +996,13 @@ export default function PerfilPage() {
 
         const avatarUrl = formData.avatar.trim()
         if (avatarUrl && !avatarUrl.startsWith("data:")) {
-          const isProfessionalAccount =
-            accountRole === "professional" ||
-            isProfessionalUser(perfilInfo?.profile_type)
-
-          if (isProfessionalAccount && professionalId) {
-            const avatarUpdate = await updateProfessionalAvatarUrl(
-              professionalId,
-              token,
-              avatarUrl
-            )
-            if (!avatarUpdate.success) {
-              toast.error(avatarUpdate.error)
-              return false
-            }
-          } else {
-            const avatarUpdate = await updateProfileAvatar(token, {
-              user_id: userId,
-              avatarUrl,
-            })
-            if (!avatarUpdate.success) {
-              toast.error(avatarUpdate.error)
-              return false
-            }
+          const avatarUpdate = await updateProfileAvatar(token, {
+            user_id: userId,
+            avatarUrl,
+          })
+          if (!avatarUpdate.success) {
+            toast.error(avatarUpdate.error)
+            return false
           }
         }
 
@@ -1337,90 +1317,35 @@ export default function PerfilPage() {
         }
         syncUserDataInSession({ id: userId })
 
-        const isProfessionalAccount =
-          accountRole === "professional" ||
-          isProfessionalUser(perfilInfo?.profile_type)
-
-        let resolvedProfessionalId = professionalId
-        if (isProfessionalAccount && !resolvedProfessionalId) {
-          resolvedProfessionalId = await resolveProfessionalIdForUser(
-            token,
-            userId
-          )
-          if (resolvedProfessionalId) {
-            setProfessionalId(resolvedProfessionalId)
-          }
-        }
-
+        const directUpload = await uploadProfileAvatarFile(token, userId, file)
         let avatarUrl: string | null = null
 
-        if (isProfessionalAccount) {
-          if (!resolvedProfessionalId) {
-            toast.error(
-              "Não foi possível identificar o perfil profissional para atualizar a foto."
-            )
-            setAvatarPreviewSrc("")
-            return
-          }
-
-          const directUpload = await uploadProfessionalAvatarFile(
-            resolvedProfessionalId,
-            file,
-            token
-          )
-
-          if (directUpload.success) {
-            avatarUrl = directUpload.data.url
-          } else {
-            toast.error(directUpload.error)
-            setAvatarPreviewSrc("")
-            return
-          }
-
-          const refreshedUrl = await refreshProfileSnapshot(token, userId)
-          if (refreshedUrl) {
-            avatarUrl = refreshedUrl
-            setAvatarPreviewSrc("")
-          } else if (avatarUrl) {
-            setPerfilUser((prev) => ({
-              ...(prev ?? {}),
-              avatar: avatarUrl ?? undefined,
-            }))
-            syncUserDataInSession({ id: userId, avatar: avatarUrl ?? undefined })
-            setAvatarPreviewSrc("")
-          }
+        if (directUpload.success) {
+          avatarUrl = directUpload.data.url
         } else {
-          let avatarDataUrl: string
-          try {
-            avatarDataUrl = await compressImageToJpegDataUrl(file)
-          } catch (err) {
-            toast.error(
-              err instanceof Error
-                ? err.message
-                : "Não foi possível preparar a imagem."
-            )
-            setAvatarPreviewSrc("")
-            return
-          }
-
           const avatarUpdate = await updateProfileAvatar(token, {
             user_id: userId,
-            avatarUrl: avatarDataUrl,
+            avatarUrl: dataUrl,
           })
           if (!avatarUpdate.success) {
-            toast.error(avatarUpdate.error)
+            toast.error(avatarUpdate.error || directUpload.error)
             setAvatarPreviewSrc("")
             return
           }
-          avatarUrl = upload.data.url
+          avatarUrl = dataUrl
+        }
 
+        const refreshedUrl = await refreshProfileSnapshot(token, userId)
+        if (refreshedUrl) avatarUrl = refreshedUrl
+
+        if (avatarUrl) {
           setPerfilUser((prev) => ({
             ...(prev ?? {}),
             avatar: avatarUrl ?? undefined,
           }))
           syncUserDataInSession({ id: userId, avatar: avatarUrl ?? undefined })
-          setAvatarPreviewSrc("")
         }
+        setAvatarPreviewSrc("")
 
         toast.success("Foto de perfil atualizada.")
       } catch (err) {
@@ -1431,14 +1356,7 @@ export default function PerfilPage() {
         setAvatarUploading(false)
       }
     },
-    [
-      accountRole,
-      perfilInfo?.profile_type,
-      professionalId,
-      profileUserId,
-      refreshProfileSnapshot,
-      toast,
-    ]
+    [profileUserId, refreshProfileSnapshot, toast]
   )
 
   const openAvatarFilePicker = useCallback(() => {
