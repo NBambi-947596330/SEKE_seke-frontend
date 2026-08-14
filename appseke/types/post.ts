@@ -151,3 +151,23 @@ export interface MyPostsPagination {
   page: number
   totalPages: number
 }
+
+/** Item em GET /api/posts/user/:id → GET …/posts/user/:id */
+export interface UserPostListItem {
+  id: string
+  content: string
+  media_urls: string[]
+  media_type: "image" | "video" | null
+  likes_count: number
+  comments_count: number
+  shares_count: number
+  views_count: number
+  created_at: string
+  author_id: string | null
+}
+
+export interface UserPostsPagination {
+  page: number
+  limit: number
+  total: number
+}

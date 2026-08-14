@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/use-auth"
 import { HomeSidebarMetrics } from "@/components/home/home-sidebar-metrics"
+import { ProfileUserPostsCard, ProfileUserPostsPanel } from "@/components/profile/profile-user-posts-card"
 import { useAccountRole, type AccountRole } from "@/lib/use-account-role"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -537,6 +538,7 @@ export default function PerfilPage() {
   const [verifyingProfessional, setVerifyingProfessional] = useState(false)
   const [isPerfilLoading, setIsPerfilLoading] = useState(false)
   const [careerTab, setCareerTab] = useState(0)
+  const [profileInfoTab, setProfileInfoTab] = useState<"info" | "posts">("info")
   const [bioExpanded, setBioExpanded] = useState(false)
 
   const [editProfileOpen, setEditProfileOpen] = useState(false)
@@ -1682,6 +1684,10 @@ export default function PerfilPage() {
     }
   }
 
+  const handleViewProfilePosts = () => {
+    setProfileInfoTab("posts")
+  }
+
   if (isLoading || isPerfilLoading) {
     return <ProfileLayoutSkeleton />
   }
@@ -1784,6 +1790,12 @@ export default function PerfilPage() {
           <aside className="order-2 space-y-6 lg:order-1 lg:col-span-3">
             <HomeSidebarMetrics role={metricsRole} userId={profileUserId} />
 
+            <ProfileUserPostsCard
+              active={profileInfoTab === "posts"}
+              disabled={!profileUserId}
+              onViewPosts={handleViewProfilePosts}
+            />
+
             <Card>
               <div className="mb-3 border-b border-border/40 pb-3">
                 <h3 className="text-base font-semibold text-foreground">Idiomas</h3>
@@ -1796,6 +1808,14 @@ export default function PerfilPage() {
 
           {/* Conteúdo central — capa e perfil sempre por cima no mobile */}
           <div className="order-1 space-y-6 lg:order-2 lg:col-span-9">
+            {profileInfoTab === "posts" ? (
+              <ProfileUserPostsPanel
+                userId={profileUserId}
+                authorName={displayUser.name || "Utilizador"}
+                onBack={() => setProfileInfoTab("info")}
+              />
+            ) : (
+              <>
             <div className="overflow-hidden rounded-md border border-border/45 bg-card">
               <div className="relative h-48 bg-primary/15">
                 {coverImageSrc ? (
@@ -2876,6 +2896,8 @@ export default function PerfilPage() {
                 </div>
               )}
             </Card>
+              </>
+            )}
           </div>
       </div>
 

@@ -9,6 +9,8 @@ import type {
   MyPostsPagination,
   PostDetail,
   UpdatePostRequest,
+  UserPostListItem,
+  UserPostsPagination,
 } from "@/types/post"
 
 const POSTS_API = "/api/posts"
@@ -960,6 +962,162 @@ export async function fetchAllMyPosts(
   }
 
   const pagination = parseMyPostsPagination(root.pagination)
+
+  return {
+    success: true,
+    data: items,
+    ...(pagination ? { pagination } : {}),
+  }
+}
+
+function parseCount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value)
+    if (Number.isFinite(n)) return n
+  }
+  return 0
+}
+
+function parseUserPostListItem(raw: unknown): UserPostListItem | null {
+  if (!raw || typeof raw !== "object") return null
+  const o = raw as Record<string, unknown>
+  const id = o.id != null ? String(o.id).trim() : ""
+  if (!id) return null
+
+  const content =
+    typeof o.content_text === "string"
+      ? o.content_text
+      : typeof o.content === "string"
+        ? o.content
+        : ""
+
+  const media_urls = Array.isArray(o.media_urls)
+    ? dedupeMediaUrls(
+        o.media_urls.filter(
+          (url): url is string => typeof url === "string" && url.trim() !== ""
+        )
+      )
+    : []
+
+  const apiMediaType =
+    typeof o.media_type === "string" ? o.media_type.trim().toLowerCase() : ""
+  let media_type: UserPostListItem["media_type"] = null
+  if (apiMediaType === "image" || apiMediaType === "imagem") media_type = "image"
+  if (apiMediaType === "video" || apiMediaType === "vídeo") media_type = "video"
+  if (!media_type && media_urls[0]) {
+    const first = media_urls[0].toLowerCase()
+    if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(first)) media_type = "video"
+    else if (/\.(jpg|jpeg|png|gif|webp|avif|svg)(\?|#|$)/i.test(first)) {
+      media_type = "image"
+    }
+  }
+
+  const created_at =
+    typeof o.created_at === "string" && o.created_at.trim()
+      ? o.created_at
+      : typeof o.createdAt === "string" && o.createdAt.trim()
+        ? o.createdAt
+        : new Date().toISOString()
+
+  const authorRaw = o.author_id ?? o.user_id
+  const author_id =
+    authorRaw == null || String(authorRaw).trim() === ""
+      ? null
+      : String(authorRaw).trim()
+
+  return {
+    id,
+    content,
+    media_urls,
+    media_type,
+    likes_count: parseCount(o.likes_count ?? o.likesCount),
+    comments_count: parseCount(o.comments_count ?? o.commentsCount),
+    shares_count: parseCount(o.shares_count ?? o.sharesCount),
+    views_count: parseCount(o.views_count ?? o.viewsCount),
+    created_at,
+    author_id,
+  }
+}
+
+function parseUserPostsPagination(raw: unknown): UserPostsPagination | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const p = raw as Record<string, unknown>
+  const page = parseCount(p.page) || 1
+  const limit = parseCount(p.limit) || 20
+  const total = parseCount(p.total)
+  return { page, limit, total }
+}
+
+export type FetchUserPostsOutcome =
+  | {
+      success: true
+      data: UserPostListItem[]
+      pagination?: UserPostsPagination
+    }
+  | { success: false; error: string; statusCode?: number }
+
+/**
+ * GET /api/posts/user/:id — publicações de um utilizador (proxy Next → API externa).
+ */
+export async function fetchPostsByUserId(
+  userId: string,
+  options?: { token?: string | null; page?: number; limit?: number }
+): Promise<FetchUserPostsOutcome> {
+  const trimmed = userId.trim()
+  if (!trimmed) {
+    return { success: false, error: "ID do utilizador inválido." }
+  }
+
+  const page = options?.page && options.page > 0 ? options.page : 1
+  const limit = options?.limit && options.limit > 0 ? options.limit : 20
+  const qs = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  })
+
+  const headers: HeadersInit = { Accept: "application/json" }
+  if (options?.token?.trim()) {
+    headers.Authorization = `Bearer ${options.token.trim()}`
+  }
+
+  const res = await fetch(
+    `${POSTS_API}/user/${encodeURIComponent(trimmed)}?${qs.toString()}`,
+    {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    }
+  )
+
+  const raw = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    const data = raw as ApiErrorResponse
+    return {
+      success: false,
+      error:
+        typeof data.message === "string" && data.message.trim()
+          ? data.message
+          : "Não foi possível carregar as publicações.",
+      statusCode: res.status,
+    }
+  }
+
+  const root = raw as Record<string, unknown>
+  const arr = Array.isArray(root.data)
+    ? root.data
+    : Array.isArray(root.posts)
+      ? root.posts
+      : []
+
+  const items: UserPostListItem[] = []
+  for (const row of arr) {
+    const parsed = parseUserPostListItem(row)
+    if (parsed) items.push(parsed)
+  }
+
+  const pagination = parseUserPostsPagination(root.pagination)
 
   return {
     success: true,
