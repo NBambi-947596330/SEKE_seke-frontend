@@ -33,7 +33,7 @@ export function PostDetailShell({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto grid grid-cols-1 gap-6 p-4 lg:grid-cols-12">
       {showSidebar && role ? (
-        <aside className="order-2 space-y-6 lg:order-1 lg:col-span-3">
+        <aside className="order-1 space-y-6 lg:col-span-3">
           <HomeUserProfileCard />
           <HomeSidebarMetrics role={role} userId={userId} />
           <LanguagesCard />
@@ -43,7 +43,7 @@ export function PostDetailShell({ children }: { children: ReactNode }) {
       <div
         className={
           showSidebar
-            ? "order-1 min-w-0 lg:order-2 lg:col-span-9"
+            ? "order-2 min-w-0 lg:col-span-9"
             : "mx-auto w-full max-w-2xl min-w-0 lg:col-span-12"
         }
       >
