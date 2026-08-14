@@ -157,6 +157,15 @@ function imageNeedsUnoptimized(src: string): boolean {
   )
 }
 
+function toCoordNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
 function pickPerfilInfoFromUnknown(raw: unknown): Partial<PerfilInfo> | null {
   if (!raw || typeof raw !== "object") return null
   const root = raw as Record<string, unknown>
@@ -207,8 +216,10 @@ function pickPerfilInfoFromUnknown(raw: unknown): Partial<PerfilInfo> | null {
     picked.cove_image = (o.cove_image as string | null) ?? null
   }
   if (typeof o.location === "string") picked.location = o.location
-  if (typeof o.latitude === "number") picked.latitude = o.latitude
-  if (typeof o.longitude === "number") picked.longitude = o.longitude
+  const lat = toCoordNumber(o.latitude)
+  const lng = toCoordNumber(o.longitude)
+  if (lat != null) picked.latitude = lat
+  if (lng != null) picked.longitude = lng
   if (typeof o.member_since === "string") picked.member_since = o.member_since
   if (typeof o.created_at === "string") picked.member_since = o.created_at
   if (Array.isArray(o.roles)) {
@@ -948,19 +959,13 @@ export default function PerfilPage() {
           const lat =
             geo.success
               ? geo.coords.latitude
-              : typeof updatedProfile?.latitude === "number"
-                ? updatedProfile.latitude
-                : typeof perfilInfo?.latitude === "number"
-                  ? perfilInfo.latitude
-                  : null
+              : toCoordNumber(updatedProfile?.latitude) ??
+                toCoordNumber(perfilInfo?.latitude)
           const lng =
             geo.success
               ? geo.coords.longitude
-              : typeof updatedProfile?.longitude === "number"
-                ? updatedProfile.longitude
-                : typeof perfilInfo?.longitude === "number"
-                  ? perfilInfo.longitude
-                  : null
+              : toCoordNumber(updatedProfile?.longitude) ??
+                toCoordNumber(perfilInfo?.longitude)
 
           if (typeof lat !== "number" || typeof lng !== "number") {
             toast.error(
@@ -1193,11 +1198,13 @@ export default function PerfilPage() {
           }
         : { ...profileForm, [editingInfoField]: editingInfoValue }
     setProfileForm(nextForm)
-    const saved = await persistProfile(
-      nextForm,
-      false,
-      editingInfoField === "location" ? locationCoords : undefined
-    )
+
+    let coordsForSave = editingInfoField === "location" ? locationCoords : undefined
+    if (editingInfoField === "location" && !coordsForSave) {
+      coordsForSave = await refreshProfileLocationCoords()
+    }
+
+    const saved = await persistProfile(nextForm, false, coordsForSave)
     if (saved) {
       setEditingInfoField(null)
       setEditingInfoValue("")
@@ -1212,6 +1219,7 @@ export default function PerfilPage() {
     locationCoords,
     persistProfile,
     profileForm,
+    refreshProfileLocationCoords,
   ])
 
   const handleCancelInfoField = useCallback(() => {
@@ -1821,9 +1829,6 @@ export default function PerfilPage() {
                   onChange={handleCoverFileChange}
                   disabled={coverUploading || savingProfile}
                 />
-                <div className="absolute inset-0 flex items-center justify-center opacity-25">
-                  <MapPin size={48} className="text-primary" />
-                </div>
               </div>
               <div className="relative px-4 pb-8 pt-0 md:px-8">
                 <div className="-translate-y-12 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

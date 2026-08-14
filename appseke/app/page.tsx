@@ -42,6 +42,7 @@ import {
 import { HomeSidebarMetrics } from '@/components/home/home-sidebar-metrics';
 import { HomeProfessionalAvailability } from '@/components/home/home-professional-availability';
 import { HomeFindProfessionalCard } from '@/components/home/home-find-professional-card';
+import { HomeUserProfileCard } from '@/components/home/home-user-profile-card';
 import { HomeSidebarPanel } from '@/components/home/home-sidebar-panel';
 import { useAuth } from '@/lib/use-auth';
 import { useVideoFeedGallery } from '@/components/video-feed-gallery/video-feed-gallery-provider';
@@ -530,6 +531,7 @@ function HomeInner() {
           className="hidden lg:block space-y-4"
           style={{ width: '342px' }}
         >
+          <HomeUserProfileCard />
           <HomeFindProfessionalCard variant="sidebar" />
 
           {!authLoading &&
@@ -553,11 +555,12 @@ function HomeInner() {
               <HeroSection />
             </div>
 
-            {!accountRoleLoading && accountRole !== 'professional' ? (
-              <div className="mt-4 hidden md:block lg:hidden">
+            <div className="mt-4 hidden space-y-4 md:block lg:hidden">
+              <HomeUserProfileCard />
+              {!accountRoleLoading && accountRole !== 'professional' ? (
                 <HomeFindProfessionalCard variant="banner" />
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
             {!accountRoleLoading && accountRole === 'client' ? (
               <div className="mt-4 mb-6">
