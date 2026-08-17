@@ -526,10 +526,9 @@ function HomeInner() {
         userId={viewerUserId}
       />
 
-      <div className="flex gap-6">
+      <div className="flex items-start gap-6">
         <aside
-          className="hidden lg:block space-y-4"
-          style={{ width: '342px' }}
+          className="sticky top-20 z-10 hidden max-h-[calc(100vh-5.5rem)] w-[342px] shrink-0 space-y-4 overflow-y-auto lg:block"
         >
           <HomeUserProfileCard />
           <HomeFindProfessionalCard variant="sidebar" />
@@ -549,7 +548,7 @@ function HomeInner() {
           ) : null}
         </aside>
 
-        <main className="flex-1">
+        <main className="min-w-0 flex-1">
           <div className="bg-white ">
             <div>
               <HeroSection />
@@ -788,8 +787,7 @@ function HomeInner() {
         </main>
 
         <aside
-          className="hidden lg:block space-y-4"
-          style={{ width: '342px' }}
+          className="sticky top-20 z-10 hidden max-h-[calc(100vh-5.5rem)] w-[342px] shrink-0 space-y-4 overflow-y-auto lg:block"
         >
           <div className="bg-white rounded-md border border-gray-200">
             <div className="p-4 border-b border-gray-200">

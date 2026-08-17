@@ -1790,11 +1790,13 @@ export default function PerfilPage() {
           <aside className="order-2 space-y-6 lg:order-1 lg:col-span-3">
             <HomeSidebarMetrics role={metricsRole} userId={profileUserId} />
 
-            <ProfileUserPostsCard
-              active={profileInfoTab === "posts"}
-              disabled={!profileUserId}
-              onViewPosts={handleViewProfilePosts}
-            />
+            {isProfessional ? (
+              <ProfileUserPostsCard
+                active={profileInfoTab === "posts"}
+                disabled={!profileUserId}
+                onViewPosts={handleViewProfilePosts}
+              />
+            ) : null}
 
             <Card>
               <div className="mb-3 border-b border-border/40 pb-3">
@@ -1808,7 +1810,7 @@ export default function PerfilPage() {
 
           {/* Conteúdo central — capa e perfil sempre por cima no mobile */}
           <div className="order-1 space-y-6 lg:order-2 lg:col-span-9">
-            {profileInfoTab === "posts" ? (
+            {isProfessional && profileInfoTab === "posts" ? (
               <ProfileUserPostsPanel
                 userId={profileUserId}
                 authorName={displayUser.name || "Utilizador"}
