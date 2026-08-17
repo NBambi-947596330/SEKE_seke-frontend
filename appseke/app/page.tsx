@@ -509,7 +509,7 @@ function HomeInner() {
       <button
         type="button"
         onClick={() => setSidebarPanelOpen(true)}
-        className="fixed right-4 bottom-5 z-40 inline-flex size-12 items-center justify-center rounded-full text-white shadow-lg transition-opacity hover:opacity-90 lg:hidden"
+        className="fixed right-4 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-60 inline-flex size-12 items-center justify-center rounded-full text-white shadow-lg transition-opacity hover:opacity-90 lg:hidden"
         style={{ backgroundColor: lightTheme.colors.primary }}
         aria-label="Abrir resumo: profissionais, disponibilidade e métricas"
       >
