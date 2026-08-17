@@ -528,7 +528,7 @@ function HomeInner() {
 
       <div className="flex items-start gap-6">
         <aside
-          className="sticky top-20 z-10 hidden max-h-[calc(100vh-5.5rem)] w-[342px] shrink-0 space-y-4 overflow-y-auto lg:block"
+          className="sticky top-20 z-10 hidden w-[342px] shrink-0 space-y-4 self-start lg:block"
         >
           <HomeUserProfileCard />
           <HomeFindProfessionalCard variant="sidebar" />
@@ -787,7 +787,7 @@ function HomeInner() {
         </main>
 
         <aside
-          className="sticky top-20 z-10 hidden max-h-[calc(100vh-5.5rem)] w-[342px] shrink-0 space-y-4 overflow-y-auto lg:block"
+          className="sticky top-20 z-10 hidden w-[342px] shrink-0 space-y-4 self-start lg:block"
         >
           <div className="bg-white rounded-md border border-gray-200">
             <div className="p-4 border-b border-gray-200">
