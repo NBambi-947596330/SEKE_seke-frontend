@@ -549,8 +549,8 @@ function HomeInner() {
         </aside>
 
         <main className="min-w-0 flex-1">
-          <div className="bg-white ">
-            <div>
+          <div className="bg-white border border-gray-200 rounded-md">
+            <div className="px-2 py-2 sm:px-2">
               <HeroSection />
             </div>
 
@@ -562,18 +562,18 @@ function HomeInner() {
             </div>
 
             {!accountRoleLoading && accountRole === 'client' ? (
-              <div className="mt-4 mb-6">
+              <div className="mt-4 mb-6 px-4 py-2 sm:px-6">
                 <ItemSolicitacaoCriar onSuccess={handleServiceRequestCreated} />
               </div>
             ) : null}
 
             {!accountRoleLoading && accountRole === 'professional' ? (
-              <div className="mt-4 mb-6">
+              <div className="mt-4 mb-6 px-4 py-2 sm:px-6">
                 <ItemPostCriar onSuccess={handlePostCreated} />
               </div>
             ) : null}
 
-            <div className="mt-2">
+            <div className="mt-2 px-4 sm:px-6">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold text-gray-900">Filtro</h2>
               </div>
@@ -618,7 +618,7 @@ function HomeInner() {
               </div>
             </div>
 
-            <div className="">
+            <div className="px-4 sm:px-6">
               {feedLoading &&
               feedPosts.length === 0 &&
               (filtro === 'todos' || filtro === 'profissionais') ? (
