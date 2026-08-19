@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/itemnavbar/itemnavbar";
 import { Providers } from "@/components/Providers/Providers";
 import { AppShell } from "@/components/layout/app-shell";
+import { Footer } from "@/components/layout/footer";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -38,6 +39,7 @@ export default function RootLayout({
         <Providers>
           <Navbar />
           <AppShell>{children}</AppShell>
+          <Footer />
         </Providers>
       </body>
     </html>

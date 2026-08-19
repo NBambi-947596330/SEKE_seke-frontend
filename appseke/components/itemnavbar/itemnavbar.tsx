@@ -10,6 +10,7 @@ import { useAccountRole } from "@/lib/use-account-role"
 import { useAuth } from "@/lib/use-auth"
 import { UserMenu } from "@/components/itemnavbar/user-menu"
 import { NavbarNotifications } from "@/components/navbar-notifications/navbar-notifications"
+import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { ExploreRightPanel } from "@/components/itemexploreseke/itemexploreseke"
 import { getAppNavItems } from "@/components/itemnavbar/nav-config"
 import { MobileBottomNav } from "@/components/itemnavbar/bottom-nav"
@@ -123,6 +124,7 @@ export function Navbar() {
 
                     {/* Ações à direita */}
                     <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 md:ml-0 md:gap-1.5 lg:gap-2">
+                        <ThemeToggle />
                         <NavbarNotifications />
 
                         <div className="flex items-center gap-1 sm:gap-1.5 lg:gap-2">

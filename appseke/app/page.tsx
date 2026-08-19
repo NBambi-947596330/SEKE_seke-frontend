@@ -41,6 +41,7 @@ import {
 import { HomeSidebarMetrics } from '@/components/home/home-sidebar-metrics';
 import { HomeProfessionalAvailability } from '@/components/home/home-professional-availability';
 import { HomeFindProfessionalCard } from '@/components/home/home-find-professional-card';
+import { HomeBecomeClientCard } from '@/components/home/home-become-client-card';
 import { HomeUserProfileCard } from '@/components/home/home-user-profile-card';
 import { HomeSidebarPanel } from '@/components/home/home-sidebar-panel';
 import { useAuth } from '@/lib/use-auth';
@@ -786,6 +787,10 @@ function HomeInner() {
         <aside
           className="sticky top-20 z-10 hidden w-[342px] shrink-0 space-y-4 self-start lg:block"
         >
+          {!authLoading && isAuthenticated && !accountRoleLoading && accountRole === 'professional' ? (
+            <HomeBecomeClientCard userId={viewerUserId} />
+          ) : null}
+
           <div className="bg-card rounded-md border border-border">
             <div className="p-4 border-b border-border">
               <h3 className="text-base font-semibold">Profissionais recomendados</h3>
