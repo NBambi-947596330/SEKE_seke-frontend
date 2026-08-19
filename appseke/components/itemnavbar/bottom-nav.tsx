@@ -30,7 +30,7 @@ function NavButton({
   const Icon = item.icon
   const className = cn(
     "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-semibold leading-tight transition-colors",
-    active ? "text-primary" : "text-gray-500",
+    active ? "text-primary" : "text-muted-foreground",
   )
 
   const content = (
@@ -89,7 +89,7 @@ function MobileBottomNavBar({
   return (
     <nav
       aria-label="Navegação principal"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_4px_rgba(20,22,26,0.08)] backdrop-blur supports-backdrop-filter:bg-white/80 md:hidden [&_a]:no-underline [&_a:hover]:no-underline [&_a:focus]:no-underline"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_4px_rgba(20,22,26,0.08)] backdrop-blur supports-backdrop-filter:bg-background/80 md:hidden [&_a]:no-underline [&_a:hover]:no-underline [&_a:focus]:no-underline"
     >
       <div className="flex items-stretch justify-around px-1 pt-1">
         {items.map((item) => (

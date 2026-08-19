@@ -10,7 +10,6 @@ import { useAccountRole } from "@/lib/use-account-role"
 import { useAuth } from "@/lib/use-auth"
 import { UserMenu } from "@/components/itemnavbar/user-menu"
 import { NavbarNotifications } from "@/components/navbar-notifications/navbar-notifications"
-import { lightTheme } from "@/style/light"
 import { ExploreRightPanel } from "@/components/itemexploreseke/itemexploreseke"
 import { getAppNavItems } from "@/components/itemnavbar/nav-config"
 import { MobileBottomNav } from "@/components/itemnavbar/bottom-nav"
@@ -45,12 +44,12 @@ export function Navbar() {
     const navItems = getAppNavItems({ isAuthenticated, role })
 
     const navLinkClass =
-        "flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-primary md:px-2.5 lg:gap-2 lg:px-2.5"
+        "flex items-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-primary md:px-2.5 lg:gap-2 lg:px-2.5"
 
     const renderSearchField = () => (
         <div className="relative w-full">
             <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
                 aria-hidden
             />
             <Input
@@ -59,7 +58,7 @@ export function Navbar() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Pesquisar hashtag…"
-                className="h-9 w-full border-gray-200 bg-gray-50/80 pl-8 pr-2.5 text-xs shadow-none placeholder:text-gray-400 focus-visible:bg-white sm:text-sm"
+                className="h-9 w-full border-border bg-muted/80 pl-8 pr-2.5 text-xs shadow-none placeholder:text-muted-foreground focus-visible:bg-background sm:text-sm"
                 autoComplete="off"
             />
         </div>
@@ -67,7 +66,7 @@ export function Navbar() {
 
     return (
         <>
-        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-white/80 [&_a]:no-underline [&_a:hover]:no-underline [&_a:focus]:no-underline">
+        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/80 [&_a]:no-underline [&_a:hover]:no-underline [&_a:focus]:no-underline">
             <div className="mx-auto max-w-[1600px] px-3 sm:px-4 md:px-6 lg:px-8">
                 <div className="flex min-h-14 items-center gap-2 py-2 md:gap-2.5 sm:min-h-16 lg:gap-3">
                     {/* Logo */}
@@ -136,15 +135,14 @@ export function Navbar() {
                                             type="button"
                                             onClick={() => router.push('/auth/login')}
                                             variant="outline"
-                                            className="h-8 cursor-pointer border-gray-200 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
+                                            className="h-8 cursor-pointer border-border px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
                                         >
                                             Entrar
                                         </Button>
                                         <Button
                                             type="button"
                                             onClick={() => router.push('/auth/register')}
-                                            style={{ backgroundColor: lightTheme.colors.primary }}
-                                            className="h-8 cursor-pointer px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
+                                            className="h-8 cursor-pointer bg-primary text-primary-foreground px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm md:h-10 md:px-4"
                                         >
                                             Criar Conta
                                         </Button>
@@ -160,7 +158,7 @@ export function Navbar() {
                     role="search"
                     aria-label="Pesquisar publicações por hashtag"
                     onSubmit={handleSearch}
-                    className="border-t border-gray-100 pb-2.5 pt-2 md:hidden"
+                    className="border-t border-border pb-2.5 pt-2 md:hidden"
                 >
                     {renderSearchField()}
                 </form>
