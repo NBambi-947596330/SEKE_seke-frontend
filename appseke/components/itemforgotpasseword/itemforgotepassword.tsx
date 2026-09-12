@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button"
 import {
     Card,
-    CardAction,
     CardContent,
     CardDescription,
     CardFooter,
@@ -11,7 +10,7 @@ import {
 import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
 import { lightTheme } from "@/style/light"
-import Link from "next/dist/client/link"
+import Link from "next/link"
 
 export function ItemForgotPassword() {
     return (
@@ -22,15 +21,16 @@ export function ItemForgotPassword() {
             border: `1px solid ${lightTheme.colors.border}`,
             fontFamily: lightTheme.typography.fontFamily,
         }}>
-            <CardHeader className="mt-6">
-                <CardTitle>Redefinir senha</CardTitle>
+            <CardHeader className="gap-2 md:mt-6">
+                <CardTitle className="text-2xl">Redefinir senha</CardTitle>
                 <CardDescription className="text-muted-foreground" style={{
                     fontSize: lightTheme.typography.fontSize.small
 
                 }}>
-                    Defina uma nova senha para recuperar o acesso à sua conta.            
-                        
-            </CardDescription>
+                    Defina uma nova senha para voltar a aceder à sua conta e
+                    continuar a encontrar os profissionais certos para os seus
+                    serviços.
+                </CardDescription>
 
             </CardHeader>
             <CardContent>
@@ -47,10 +47,9 @@ export function ItemForgotPassword() {
                         </div>
                         <div className="grid gap-2">
                             <div className="flex items-center">
-                                <Label htmlFor="password">Confirmar  Senha</Label>
-                                
+                                <Label htmlFor="password">Confirmar Senha</Label>
                             </div>
-                            <PasswordInput id="password" placeholder="confirmar senha" required style={{
+                            <PasswordInput id="password" placeholder="Confirmar senha" required style={{
                                 border: `1px solid ${lightTheme.colors.border}`,
                                 outlineColor: lightTheme.colors.primary
                             }} />
@@ -60,10 +59,10 @@ export function ItemForgotPassword() {
             </CardContent>
             <CardFooter className="flex-col gap-2">
                 <Button type="submit" className="w-full cursor-pointer text-white h-10" style={{ backgroundColor: lightTheme.colors.primary, }}>
-                    Criar
+                    Atualizar senha
                 </Button>
                 <p className="mt-6">
-                  <Link href="/auth/login" className="text-primary">Voltar para o login</Link>
+                    <Link href="/auth/login" className="text-primary">Voltar para o login</Link>
                 </p>
             </CardFooter>
         </Card>

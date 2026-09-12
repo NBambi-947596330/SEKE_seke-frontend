@@ -23,12 +23,13 @@ export function ItemOtpCode() {
             border: `1px solid ${lightTheme.colors.border}`,
             fontFamily: lightTheme.typography.fontFamily,
         }}>
-            <CardHeader className="mt-6">
-                <CardTitle className="text-xl">Confirmar código</CardTitle>
+            <CardHeader className="gap-2 md:mt-6">
+                <CardTitle className="text-2xl">Confirmar código</CardTitle>
                 <CardDescription className="text-muted-foreground" style={{
                     fontSize: lightTheme.typography.fontSize.body
                 }}>
-                    Enviamos um código para o seu e-mail. Digite-o abaixo para continuar.
+                    Enviamos um código para o seu e-mail. Digite-o abaixo para
+                    continuar a recuperar o acesso à sua conta.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -103,7 +104,7 @@ export function ItemOtpCode() {
                     className="w-full cursor-pointer text-white h-10"
                     style={{ backgroundColor: lightTheme.colors.primary }}
                 >
-                    Enviar
+                    Confirmar código
                 </Button>
                 <p className="mt-6 text-center">
                     <Link

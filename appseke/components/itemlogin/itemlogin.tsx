@@ -131,15 +131,16 @@ export function ItemLogin() {
         fontFamily: lightTheme.typography.fontFamily,
       }}
     >
-      <CardHeader className="mt-6">
-        <CardTitle>Login</CardTitle>
+      <CardHeader className="gap-2 md:mt-6">
+        <CardTitle className="text-2xl">Bem-vindo de volta</CardTitle>
         <CardDescription
           className="text-muted-foreground"
           style={{
             fontSize: lightTheme.typography.fontSize.small,
           }}
         >
-          Digite seu e-mail e senha para acessar sua conta com segurança.
+          Aceda à sua conta para encontrar, contratar e acompanhar os
+          profissionais certos para os seus serviços.
         </CardDescription>
       </CardHeader>
       <CardContent>
