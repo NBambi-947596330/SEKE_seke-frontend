@@ -26,6 +26,9 @@ const FORGOT_PASSWORD_API = AUTH_API_BASE
 const RESET_PASSWORD_API = AUTH_API_BASE
   ? `${AUTH_API_BASE.replace(/\/$/, "")}/iam-auth?action=reset-password-otp`
   : "/api/auth/reset-password"
+const CHANGE_PASSWORD_API = AUTH_API_BASE
+  ? `${AUTH_API_BASE.replace(/\/$/, "")}/iam-auth?action=reset-password`
+  : "/api/profile/password"
 const REGISTER_API = AUTH_API_BASE
   ? `${AUTH_API_BASE.replace(/\/$/, "")}/iam-auth?action=register`
   : EXTERNAL_API_BASE
@@ -399,6 +402,64 @@ export async function requestResetPassword(
         ? message
         : "Não foi possível redefinir a senha. Tente novamente."
     return { success: false, error, statusCode: res.status }
+  }
+
+  return {
+    success: true,
+    message: typeof message === "string" ? message : undefined,
+  }
+}
+
+export type ChangePasswordOutcome =
+  | { success: true; message?: string }
+  | { success: false; error: string; statusCode?: number }
+
+/** POST iam-auth?action=reset-password — altera a senha de um utilizador autenticado. */
+export async function changeAccountPassword(
+  token: string,
+  newPassword: string
+): Promise<ChangePasswordOutcome> {
+  const trimmedToken = token.trim()
+  const trimmedPassword = newPassword.trim()
+  if (!trimmedToken) {
+    return { success: false, error: "Sessão inválida. Inicie sessão novamente.", statusCode: 401 }
+  }
+  if (!trimmedPassword) {
+    return { success: false, error: "Informe a nova senha.", statusCode: 400 }
+  }
+
+  const payload = {
+    token: trimmedToken,
+    newPassword: trimmedPassword,
+  }
+
+  const res = await fetch(CHANGE_PASSWORD_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${trimmedToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const raw = await res.json().catch(() => ({}))
+  const message =
+    raw && typeof raw === "object" && "message" in raw
+      ? (raw as { message?: unknown }).message
+      : undefined
+  const errorField =
+    raw && typeof raw === "object" && "error" in raw
+      ? (raw as { error?: unknown }).error
+      : undefined
+
+  if (!res.ok) {
+    const detail =
+      typeof message === "string" && message.trim()
+        ? message
+        : typeof errorField === "string" && errorField.trim()
+          ? errorField
+          : "Não foi possível alterar a senha. Tente novamente."
+    return { success: false, error: detail, statusCode: res.status }
   }
 
   return {
