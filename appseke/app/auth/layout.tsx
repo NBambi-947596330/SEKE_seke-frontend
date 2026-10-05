@@ -22,7 +22,7 @@ export default function AuthLayout({
 
   if (hideImage) {
     return (
-      <div className="flex min-h-[100dvh] flex-col bg-white font-sans">
+      <div className="flex min-h-[100dvh] flex-col bg-background text-foreground font-sans">
         <main className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8 md:items-center md:justify-center">
           <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-9 md:max-w-2xl">
             <AuthBrandHeader className="md:items-center" />
@@ -34,7 +34,7 @@ export default function AuthLayout({
   }
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-white font-sans md:h-screen md:flex-row md:overflow-hidden">
+    <div className="flex min-h-[100dvh] flex-col bg-background text-foreground font-sans md:h-screen md:flex-row md:overflow-hidden">
       <div className="relative flex w-full flex-1 flex-col overflow-y-auto px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8 md:w-1/2 md:items-center md:justify-center md:px-8 lg:px-10">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center gap-9 md:items-stretch md:gap-0">
           <AuthBrandHeader className="md:hidden" />
