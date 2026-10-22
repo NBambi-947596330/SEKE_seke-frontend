@@ -206,6 +206,8 @@ Rota dedicada: `/profissional`
 
 **Estado atual:** interface **integrada** com a Edge Function de mensagens (`{NEXT_PUBLIC_URL_API_AUTH}/chat?action=…`): listar/criar conversas, listar e enviar mensagens (texto, imagem, localização), marcar como lida, arquivar e apagar mensagens. Actualização por *polling* (30 s para a lista de conversas, 15 s para a conversa aberta); ainda não existe canal WebSocket. O widget flutuante de mensagens está montado no `AppShell` (oculto nas páginas de mensagens).
 
+**Criar conversa:** ao contactar um profissional a partir do perfil (`/chat?userId=…&name=…`), a conversa é criada no primeiro envio via `POST ?action=create-conversation`, com o texto escrito pelo cliente no campo `initial_message`. Se já existir conversa com esse profissional, a mesma é simplesmente aberta.
+
 ---
 
 ### 6.8 Pedidos

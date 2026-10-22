@@ -459,6 +459,15 @@ Botões, inputs, dialogs, sheets, toast, skeleton, select, tooltip, password-inp
 - Atualização periódica (30 s para conversas, 15 s para a conversa aberta) em vez de WebSocket.
 - Widget flutuante montado em `components/layout/app-shell.tsx` (oculto em `/chat` e `/profissional/mensagens`), com contador de não lidas vindo da API.
 
+**Criar conversa (`POST ?action=create-conversation`)**
+
+- O corpo segue o contrato da API: `{ "professional_id": "<uuid-do-profissional>", "initial_message": "<texto>" }`.
+- O botão de mensagem do perfil leva para `/chat?userId=<id>&name=<nome>`. Se ainda não existe conversa com esse profissional, **nada é criado ao entrar**: a app mostra um ecrã "nova conversa" com o campo de texto pré-preenchido (`Olá, preciso de orçamento.`, editável).
+- A conversa é criada no **primeiro envio**, e a mensagem escrita pelo utilizador é enviada como `initial_message` — evitando conversas vazias.
+- Se já existir conversa com o profissional, essa conversa é aberta e nada é criado.
+- Imagem ou localização como primeira mensagem: a conversa é criada primeiro (sem `initial_message`) e a media é enviada logo a seguir.
+- Se o envio falhar, o texto mantém-se no campo para o utilizador poder tentar de novo.
+
 ### 9.10 Configurações
 
 - UI de preferências, segurança, privacidade, visibilidade, ajuda.

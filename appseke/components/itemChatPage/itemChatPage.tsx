@@ -32,6 +32,9 @@ const CONVERSATION_POLL_MS = 30_000;
 const MESSAGE_POLL_MS = 15_000;
 const PAGE_LIMIT = 50;
 
+/** Texto pré-preenchido ao iniciar uma conversa nova (editável pelo utilizador). */
+const NEW_CONVERSATION_DRAFT = "Olá, preciso de orçamento.";
+
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 function getStoredToken(): string | null {
@@ -102,11 +105,18 @@ export default function ItemChatPage({
   const [search, setSearch] = useState("");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * Profissional com quem ainda não existe conversa. A conversa só é criada
+   * (`POST create-conversation`) quando o utilizador envia a primeira mensagem,
+   * que é passada como `initial_message`.
+   */
+  const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
   /** Estado de cada conversa aberta, indexado pelo id da conversa. */
   const [threads, setThreads] = useState<Record<string, ThreadState>>({});
   const [sending, setSending] = useState(false);
 
   const targetUserId = searchParams.get("userId")?.trim() ?? "";
+  const targetUserName = searchParams.get("name")?.trim() ?? "";
   const targetConversationId = searchParams.get("conversation")?.trim() ?? "";
   /** Parâmetros da URL já aplicados (evita repor a selecção do utilizador). */
   const appliedConversationParamRef = useRef<string | null>(null);
@@ -274,43 +284,22 @@ export default function ItemChatPage({
       // Iniciar conversa a partir do perfil (?userId=…)
       if (!targetUserId || appliedUserParamRef.current === targetUserId) return;
 
-      const token = getStoredToken();
-      if (!token) return;
-
       const existing = conversations.find(
         (c) => c.participantId === targetUserId
       );
       if (existing) {
         appliedUserParamRef.current = targetUserId;
+        setPendingTargetId(null);
         setSelectedId(existing.id);
         return;
       }
 
-      const created = await createConversation(token, {
-        professionalId: targetUserId,
-      });
-
-      if (!created.success) {
-        toast.error(created.error);
-        return;
-      }
-
-      const list = await listConversations(token, {
-        includeArchived: true,
-        limit: PAGE_LIMIT,
-      });
-      if (!list.success) return;
-
-      setConversations(list.data.conversations);
-
-      const match = created.data?.id
-        ? list.data.conversations.find((c) => c.id === created.data?.id)
-        : list.data.conversations.find((c) => c.participantId === targetUserId);
-
-      if (match) {
-        appliedUserParamRef.current = targetUserId;
-        setSelectedId(match.id);
-      }
+      // Ainda não existe conversa: fica pendente. A conversa é criada no
+      // primeiro envio (`POST create-conversation` com `initial_message`),
+      // evitando conversas vazias.
+      appliedUserParamRef.current = targetUserId;
+      setPendingTargetId(targetUserId);
+      setSelectedId(null);
     })();
   }, [
     isAuthenticated,
@@ -325,8 +314,66 @@ export default function ItemChatPage({
   /* ---------------------------------------------------------------------- */
 
   const handleSelect = useCallback((conversationId: string) => {
+    setPendingTargetId(null);
     setSelectedId(conversationId);
   }, []);
+
+  /**
+   * Cria a conversa com um profissional (`POST create-conversation`) e passa a
+   * seleccioná-la. Devolve o id da conversa criada ou `null` em caso de erro.
+   */
+  const createAndSelectConversation = useCallback(
+    async (
+      professionalId: string,
+      initialMessage?: string
+    ): Promise<string | null> => {
+      const token = getStoredToken();
+      if (!token) return null;
+
+      const created = await createConversation(token, {
+        professionalId,
+        initialMessage,
+      });
+
+      if (!created.success) {
+        toast.error(created.error);
+        return null;
+      }
+
+      setPendingTargetId(null);
+
+      const list = await listConversations(token, {
+        includeArchived: true,
+        limit: PAGE_LIMIT,
+      });
+      if (!list.success) {
+        // A conversa foi criada na API, mas a lista não carregou.
+        if (created.data?.id) setSelectedId(created.data.id);
+        return created.data?.id ?? null;
+      }
+
+      setConversations(list.data.conversations);
+
+      const match =
+        (created.data?.id
+          ? list.data.conversations.find((c) => c.id === created.data?.id)
+          : null) ??
+        list.data.conversations.find((c) => c.participantId === professionalId);
+
+      if (match) {
+        setSelectedId(match.id);
+        return match.id;
+      }
+
+      if (created.data?.id) {
+        setSelectedId(created.data.id);
+        return created.data.id;
+      }
+
+      return null;
+    },
+    []
+  );
 
   const handleToggleArchive = useCallback(
     async (conversation: ChatConversation) => {
@@ -348,10 +395,25 @@ export default function ItemChatPage({
     []
   );
 
+  /** Envia uma mensagem de texto. Devolve `false` se o envio falhar. */
   const handleSendText = useCallback(
-    async (content: string) => {
+    async (content: string): Promise<boolean> => {
       const token = getStoredToken();
-      if (!token || !selectedId) return;
+      if (!token) return false;
+
+      // Primeira mensagem de uma conversa ainda não criada:
+      // `POST create-conversation` recebe a mensagem como `initial_message`.
+      if (pendingTargetId) {
+        setSending(true);
+        const createdId = await createAndSelectConversation(
+          pendingTargetId,
+          content
+        );
+        setSending(false);
+        return !!createdId;
+      }
+
+      if (!selectedId) return false;
       const conversationId = selectedId;
 
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -392,7 +454,7 @@ export default function ItemChatPage({
           ),
         }));
         toast.error(result.error);
-        return;
+        return false;
       }
 
       updateThread(conversationId, (current) => ({
@@ -405,15 +467,34 @@ export default function ItemChatPage({
       void (async () => {
         await loadConversations();
       })();
+      return true;
     },
-    [selectedId, viewerId, loadConversations, updateThread]
+    [
+      selectedId,
+      viewerId,
+      pendingTargetId,
+      createAndSelectConversation,
+      loadConversations,
+      updateThread,
+    ]
   );
 
   const handleSendImage = useCallback(
     async (file: File) => {
       const token = getStoredToken();
-      if (!token || !selectedId) return;
-      const conversationId = selectedId;
+      if (!token) return;
+
+      // Imagem como primeira mensagem: cria primeiro a conversa.
+      let conversationId = selectedId;
+      if (!conversationId) {
+        if (!pendingTargetId) return;
+        setSending(true);
+        conversationId = await createAndSelectConversation(pendingTargetId);
+        if (!conversationId) {
+          setSending(false);
+          return;
+        }
+      }
 
       setSending(true);
       const upload = await uploadChatMedia(token, file);
@@ -444,13 +525,24 @@ export default function ItemChatPage({
         await loadConversations();
       })();
     },
-    [selectedId, loadConversations, updateThread]
+    [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]
   );
 
   const handleSendLocation = useCallback(async () => {
     const token = getStoredToken();
-    if (!token || !selectedId) return;
-    const conversationId = selectedId;
+    if (!token) return;
+
+    // Localização como primeira mensagem: cria primeiro a conversa.
+    let conversationId = selectedId;
+    if (!conversationId) {
+      if (!pendingTargetId) return;
+      setSending(true);
+      conversationId = await createAndSelectConversation(pendingTargetId);
+      if (!conversationId) {
+        setSending(false);
+        return;
+      }
+    }
 
     const geo = await getClientGeolocation();
     if (!geo.success) {
@@ -481,7 +573,7 @@ export default function ItemChatPage({
     void (async () => {
       await loadConversations();
     })();
-  }, [selectedId, loadConversations, updateThread]);
+  }, [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]);
 
   const handleDeleteMessage = useCallback(
     async (messageId: string) => {
@@ -574,7 +666,7 @@ export default function ItemChatPage({
             filter={filter}
             onFilterChange={setFilter}
             onToggleArchive={handleToggleArchive}
-            hiddenOnMobile={!!selectedId}
+            hiddenOnMobile={!!selectedId || !!pendingTargetId}
           />
 
           {/* Área do chat */}
@@ -649,9 +741,68 @@ export default function ItemChatPage({
                 />
 
                 <ChatComposer
+                  key={selectedId}
                   disabled={!selectedId || sending}
                   sending={sending}
-                  onSendText={(content) => void handleSendText(content)}
+                  onSendText={handleSendText}
+                  onSendImage={(file) => void handleSendImage(file)}
+                  onSendLocation={() => void handleSendLocation()}
+                />
+              </>
+            ) : pendingTargetId ? (
+              /* Nova conversa: ainda não existe no servidor — é criada no
+                 primeiro envio (POST create-conversation + initial_message). */
+              <>
+                <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPendingTargetId(null)}
+                    className="-ml-1 flex cursor-pointer items-center gap-1 rounded-lg py-2 pr-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Voltar
+                  </button>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
+                  <Image
+                    src={resolveUserAvatarUrl(null)}
+                    alt={targetUserName || "Profissional"}
+                    width={44}
+                    height={44}
+                    className="h-10 w-10 shrink-0 rounded-full object-cover sm:h-11 sm:w-11"
+                    unoptimized={userAvatarSrcUnoptimized(resolveUserAvatarUrl(null))}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                      {targetUserName || "Novo profissional"}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+                      Nova conversa
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex min-h-[180px] flex-1 flex-col items-center justify-center gap-2 p-6 text-center sm:p-8">
+                  <div className="rounded-full bg-muted p-3">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Escreva a sua primeira mensagem
+                  </p>
+                  <p className="max-w-[280px] text-xs text-muted-foreground sm:text-sm">
+                    A conversa é criada quando enviar. Pode editar o texto antes
+                    de enviar.
+                  </p>
+                </div>
+
+                <ChatComposer
+                  key={pendingTargetId}
+                  defaultValue={NEW_CONVERSATION_DRAFT}
+                  placeholder="Escreva a sua mensagem inicial..."
+                  disabled={sending}
+                  sending={sending}
+                  onSendText={handleSendText}
                   onSendImage={(file) => void handleSendImage(file)}
                   onSendLocation={() => void handleSendLocation()}
                 />

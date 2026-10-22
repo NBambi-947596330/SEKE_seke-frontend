@@ -11,7 +11,11 @@ interface ChatComposerProps {
   /** Desativa o envio (ex.: conversa não carregada). */
   disabled?: boolean;
   sending: boolean;
-  onSendText: (content: string) => void;
+  /** Texto inicial do campo (ex.: saudação ao iniciar uma conversa). */
+  defaultValue?: string;
+  /** Placeholder do campo de texto. */
+  placeholder?: string;
+  onSendText: (content: string) => boolean | Promise<boolean>;
   onSendImage: (file: File) => void;
   onSendLocation: () => void;
 }
@@ -19,21 +23,26 @@ interface ChatComposerProps {
 export default function ChatComposer({
   disabled = false,
   sending = false,
+  defaultValue = "",
+  placeholder = "Escreva uma mensagem...",
   onSendText,
   onSendImage,
   onSendLocation,
 }: ChatComposerProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(defaultValue);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canSend = !disabled && !sending && value.trim().length > 0;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const content = value.trim();
     if (!content || disabled || sending) return;
-    onSendText(content);
-    setValue("");
+
+    const sent = await onSendText(content);
+
+    // Mantém o texto quando o envio falha, para o utilizador poder tentar de novo.
+    if (sent) setValue("");
   };
 
   const handleFileChange = async (file: File | undefined) => {
@@ -98,10 +107,10 @@ export default function ChatComposer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
-              handleSubmit()
+              void handleSubmit()
             }
           }}
-          placeholder="Escreva uma mensagem..."
+          placeholder={placeholder}
           rows={1}
           disabled={disabled}
           aria-label="Mensagem"
@@ -114,7 +123,7 @@ export default function ChatComposer({
         <Button
           type="button"
           size="icon"
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           disabled={!canSend}
           aria-label="Enviar mensagem"
           className="h-10 w-10 shrink-0 rounded-xl bg-primary text-primary-foreground sm:h-11 sm:w-11"

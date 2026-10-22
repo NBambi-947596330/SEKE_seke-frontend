@@ -580,7 +580,14 @@ export async function sendMessage(
   return { success: true, data: parseMessage(candidate) }
 }
 
-/** POST ?action=create-conversation — inicia uma conversa com um profissional. */
+/**
+ * POST ?action=create-conversation — inicia uma conversa com um profissional.
+ *
+ * Corpo (contrato da API):
+ * `{ "professional_id": "<uuid-do-profissional>", "initial_message": "<texto>" }`
+ *
+ * O `initial_message` é opcional: só é enviado quando existe texto.
+ */
 export async function createConversation(
   token: string,
   input: ChatCreateConversationInput
