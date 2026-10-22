@@ -1,17 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { LogIn, MessageCircle, Search, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/use-auth";
 import { useViewerUserId } from "@/lib/viewer-user-id";
 import { getClientGeolocation } from "@/lib/geolocation";
-import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
 import {
   archiveConversation,
   createConversation,
@@ -25,6 +23,7 @@ import {
 import type { ChatConversation, ChatMessage } from "@/types/chat";
 
 import ChatComposer from "./chat-composer";
+import ChatConversationHeader from "./chat-conversation-header";
 import ChatConversationList from "./chat-conversation-list";
 import ChatThread from "./chat-thread";
 
@@ -101,6 +100,7 @@ export default function ItemChatPage({
   /** true quando a primeira carga de conversas já terminou (com sucesso ou erro). */
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
+  const [conversationsFetching, setConversationsFetching] = useState(false);
   const [filter, setFilter] = useState<"active" | "archived">("active");
   const [search, setSearch] = useState("");
 
@@ -133,18 +133,22 @@ export default function ItemChatPage({
   const messagesError = thread?.error ?? null;
   const hasMore = thread?.hasMore ?? false;
   const loadingMore = thread?.loadingMore ?? false;
-  const conversationsLoading = !conversationsLoaded && conversationsError === null;
+  const conversationsLoading =
+    (!conversationsLoaded || conversationsFetching) &&
+    conversationsError === null;
 
   /* ---------------------------------------------------------------------- */
   /* Conversas                                                              */
   /* ---------------------------------------------------------------------- */
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (mode: "full" | "silent" = "silent") => {
     const token = getStoredToken();
     if (!token) {
       setConversationsLoaded(true);
       return;
     }
+
+    if (mode === "full") setConversationsFetching(true);
 
     const result = await listConversations(token, {
       includeArchived: true,
@@ -158,13 +162,14 @@ export default function ItemChatPage({
       setConversationsError(result.error);
     }
 
+    setConversationsFetching(false);
     setConversationsLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!isAuthenticated || authLoading) return;
     void (async () => {
-      await loadConversations();
+      await loadConversations("full");
     })();
   }, [isAuthenticated, authLoading, loadConversations]);
 
@@ -173,7 +178,7 @@ export default function ItemChatPage({
     if (!isAuthenticated) return;
     const id = window.setInterval(() => {
       void (async () => {
-        await loadConversations();
+        await loadConversations("silent");
       })();
     }, CONVERSATION_POLL_MS);
     return () => window.clearInterval(id);
@@ -468,7 +473,7 @@ export default function ItemChatPage({
         ),
       }));
       void (async () => {
-        await loadConversations();
+        await loadConversations("silent");
       })();
       return true;
     },
@@ -480,6 +485,23 @@ export default function ItemChatPage({
       loadConversations,
       updateThread,
     ]
+  );
+
+  /** Remove a mensagem que falhou e tenta enviá-la novamente. */
+  const handleRetryMessage = useCallback(
+    async (message: ChatMessage) => {
+      if (!message.content.trim()) return;
+      const conversationId = message.conversationId ?? selectedId;
+      if (!conversationId) return;
+
+      updateThread(conversationId, (current) => ({
+        ...current,
+        messages: current.messages.filter((m) => m.id !== message.id),
+      }));
+
+      await handleSendText(message.content);
+    },
+    [selectedId, updateThread, handleSendText]
   );
 
   const handleSendImage = useCallback(
@@ -527,7 +549,7 @@ export default function ItemChatPage({
         }));
       }
       void (async () => {
-        await loadConversations();
+        await loadConversations("silent");
       })();
     },
     [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]
@@ -576,7 +598,7 @@ export default function ItemChatPage({
       }));
     }
     void (async () => {
-      await loadConversations();
+      await loadConversations("silent");
     })();
   }, [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]);
 
@@ -600,7 +622,7 @@ export default function ItemChatPage({
     [selectedId, updateThread]
   );
 
-  const handleLoadMore = useCallback(() => {
+  const handleLoadMore = useCallback(async () => {
     if (!selectedId) return;
     const current = threads[selectedId];
     if (!current || current.loadingMore) return;
@@ -609,9 +631,7 @@ export default function ItemChatPage({
     if (!oldest) return;
 
     updateThread(selectedId, (state) => ({ ...state, loadingMore: true }));
-    void (async () => {
-      await loadMessages(selectedId, { before: oldest });
-    })();
+    await loadMessages(selectedId, { before: oldest });
   }, [selectedId, threads, loadMessages, updateThread]);
 
   /* ---------------------------------------------------------------------- */
@@ -627,209 +647,170 @@ export default function ItemChatPage({
       : "Conversas com os profissionais que contratou.");
 
   const showEmptyState = !authLoading && !isAuthenticated;
+  const showListOnMobile = !selectedId && !pendingTargetId;
 
-  return (
-    <div className="flex h-[calc(100vh-6rem)] min-h-[320px] max-h-[calc(100vh-6rem)] flex-col overflow-hidden border-border bg-card shadow-sm sm:min-h-[420px]">
-      {/* Header da página */}
-      <div className="shrink-0 border-b border-border bg-card px-3 py-3 sm:px-4">
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
-          {title}
-        </h1>
-        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:text-sm">
-          {subtitle}
-        </p>
-      </div>
-
-      {showEmptyState ? (
+  if (showEmptyState) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card sm:my-3 sm:rounded-2xl sm:border sm:border-border sm:shadow-sm">
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-          <div className="rounded-full bg-muted p-4">
-            <MessageCircle className="h-10 w-10 text-muted-foreground" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-foreground">
+          <span className="rounded-full bg-primary/10 p-4">
+            <MessageCircle
+              className="h-9 w-9 text-primary"
+              strokeWidth={1.5}
+              aria-hidden
+            />
+          </span>
+          <div className="max-w-sm">
+            <p className="text-base font-bold text-foreground">
               Inicie sessão para ver as suas mensagens
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              As conversas ficam disponíveis apenas para utilizadores autenticados.
+            <p className="mt-1 text-sm text-muted-foreground">
+              As conversas ficam disponíveis apenas para utilizadores
+              autenticados.
             </p>
           </div>
           <Button asChild size="sm">
-            <Link href="/auth/login">Iniciar sessão</Link>
+            <Link href="/auth/login">
+              <LogIn className="h-4 w-4" aria-hidden />
+              Iniciar sessão
+            </Link>
           </Button>
         </div>
-      ) : (
-        <div className="flex min-h-0 flex-1">
-          <ChatConversationList
-            conversations={conversations}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            loading={conversationsLoading}
-            error={conversationsError}
-            onRetry={() => void loadConversations()}
-            search={search}
-            onSearchChange={setSearch}
-            filter={filter}
-            onFilterChange={setFilter}
-            onToggleArchive={handleToggleArchive}
-            hiddenOnMobile={!!selectedId || !!pendingTargetId}
-          />
+      </div>
+    );
+  }
 
-          {/* Área do chat */}
-          <main className="flex min-w-0 flex-1 flex-col bg-card">
-            {selected ? (
-              <>
-                {/* Voltar (mobile) */}
-                <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(null)}
-                    className="-ml-1 flex cursor-pointer items-center gap-1 rounded-lg py-2 pr-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Voltar
-                  </button>
-                </div>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card sm:my-3 sm:rounded-2xl sm:border sm:border-border sm:shadow-sm">
+      <div className="flex min-h-0 flex-1">
+        <ChatConversationList
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          loading={conversationsLoading}
+          error={conversationsError}
+          onRetry={() => void loadConversations("full")}
+          search={search}
+          onSearchChange={setSearch}
+          filter={filter}
+          onFilterChange={setFilter}
+          onToggleArchive={handleToggleArchive}
+          hiddenOnMobile={!showListOnMobile}
+          title={title}
+          subtitle={subtitle}
+        />
 
-                {/* Header da conversa */}
-                <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-                  <Image
-                    src={resolveUserAvatarUrl(selected.participantAvatar)}
-                    alt={selected.participantName}
-                    width={44}
-                    height={44}
-                    className="h-10 w-10 shrink-0 rounded-full object-cover sm:h-11 sm:w-11"
-                    unoptimized={userAvatarSrcUnoptimized(
-                      resolveUserAvatarUrl(selected.participantAvatar)
-                    )}
+        {/* Área do chat */}
+        <main className="flex min-w-0 flex-1 flex-col bg-card sm:border-l sm:border-border">
+          {selected ? (
+            <>
+              <ChatConversationHeader
+                name={selected.participantName}
+                avatarUrl={selected.participantAvatar}
+                contextTitle={selected.contextTitle}
+                statusLabel={selected.archived ? "Conversa arquivada" : null}
+                archived={selected.archived}
+                onToggleArchive={() => void handleToggleArchive(selected)}
+                participantId={selected.participantId}
+                onBack={showListOnMobile ? undefined : () => setSelectedId(null)}
+              />
+
+              <ChatThread
+                key={`thread-${selectedId}`}
+                messages={messages}
+                viewerId={viewerId}
+                participantName={selected.participantName}
+                participantAvatar={selected.participantAvatar}
+                loading={messagesLoading}
+                error={messagesError}
+                onRetry={() => selectedId && void loadMessages(selectedId)}
+                onDeleteMessage={(id) => void handleDeleteMessage(id)}
+                onRetryMessage={(message) => void handleRetryMessage(message)}
+                hasMore={hasMore}
+                loadingMore={loadingMore}
+                onLoadMore={handleLoadMore}
+              />
+
+              <ChatComposer
+                key={`composer-${selectedId}`}
+                disabled={!selectedId || sending}
+                sending={sending}
+                onSendText={handleSendText}
+                onSendImage={(file) => void handleSendImage(file)}
+                onSendLocation={() => void handleSendLocation()}
+              />
+            </>
+          ) : pendingTargetId ? (
+            <>
+              <ChatConversationHeader
+                name={targetUserName || "Novo profissional"}
+                avatarUrl={null}
+                statusLabel="Novo contacto"
+                participantId={pendingTargetId}
+                onBack={() => setPendingTargetId(null)}
+              />
+
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                <span className="rounded-full bg-primary/10 p-3.5">
+                  <Send
+                    className="h-6 w-6 text-primary"
+                    strokeWidth={1.5}
+                    aria-hidden
                   />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground sm:text-base">
-                      {selected.participantName}
-                    </p>
-                    {selected.contextTitle ? (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
-                        {selected.contextTitle}
-                      </p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleToggleArchive(selected)}
-                    className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    aria-label={
-                      selected.archived
-                        ? "Desarquivar conversa"
-                        : "Arquivar conversa"
-                    }
-                    title={
-                      selected.archived
-                        ? "Desarquivar conversa"
-                        : "Arquivar conversa"
-                    }
-                  >
-                    <span className="text-xs font-medium">
-                      {selected.archived ? "Restaurar" : "Arquivar"}
-                    </span>
-                  </button>
-                </div>
+                </span>
+                <p className="text-sm font-semibold text-foreground">
+                  Escreva a sua primeira mensagem
+                </p>
+                <p className="max-w-[20rem] text-xs text-muted-foreground">
+                  A conversa é criada quando enviar. Pode editar o texto antes de
+                  enviar.
+                </p>
+              </div>
 
-                <ChatThread
-                  messages={messages}
-                  viewerId={viewerId}
-                  loading={messagesLoading}
-                  error={messagesError}
-                  onRetry={() => selectedId && void loadMessages(selectedId)}
-                  onDeleteMessage={(id) => void handleDeleteMessage(id)}
-                  hasMore={hasMore}
-                  loadingMore={loadingMore}
-                  onLoadMore={handleLoadMore}
+              <ChatComposer
+                key={pendingTargetId}
+                defaultValue={NEW_CONVERSATION_DRAFT}
+                placeholder="Escreva a sua mensagem inicial..."
+                disabled={sending}
+                sending={sending}
+                onSendText={handleSendText}
+                onSendImage={(file) => void handleSendImage(file)}
+                onSendLocation={() => void handleSendLocation()}
+              />
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+              <span className="rounded-full bg-muted p-4">
+                <MessageCircle
+                  className="h-8 w-8 text-muted-foreground"
+                  strokeWidth={1.5}
+                  aria-hidden
                 />
-
-                <ChatComposer
-                  key={selectedId}
-                  disabled={!selectedId || sending}
-                  sending={sending}
-                  onSendText={handleSendText}
-                  onSendImage={(file) => void handleSendImage(file)}
-                  onSendLocation={() => void handleSendLocation()}
-                />
-              </>
-            ) : pendingTargetId ? (
-              /* Nova conversa: ainda não existe no servidor — é criada no
-                 primeiro envio (POST create-conversation + initial_message). */
-              <>
-                <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setPendingTargetId(null)}
-                    className="-ml-1 flex cursor-pointer items-center gap-1 rounded-lg py-2 pr-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Voltar
-                  </button>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-                  <Image
-                    src={resolveUserAvatarUrl(null)}
-                    alt={targetUserName || "Profissional"}
-                    width={44}
-                    height={44}
-                    className="h-10 w-10 shrink-0 rounded-full object-cover sm:h-11 sm:w-11"
-                    unoptimized={userAvatarSrcUnoptimized(resolveUserAvatarUrl(null))}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground sm:text-base">
-                      {targetUserName || "Novo profissional"}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
-                      Nova conversa
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex min-h-[180px] flex-1 flex-col items-center justify-center gap-2 p-6 text-center sm:p-8">
-                  <div className="rounded-full bg-muted p-3">
-                    <MessageCircle className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Escreva a sua primeira mensagem
-                  </p>
-                  <p className="max-w-[280px] text-xs text-muted-foreground sm:text-sm">
-                    A conversa é criada quando enviar. Pode editar o texto antes
-                    de enviar.
-                  </p>
-                </div>
-
-                <ChatComposer
-                  key={pendingTargetId}
-                  defaultValue={NEW_CONVERSATION_DRAFT}
-                  placeholder="Escreva a sua mensagem inicial..."
-                  disabled={sending}
-                  sending={sending}
-                  onSendText={handleSendText}
-                  onSendImage={(file) => void handleSendImage(file)}
-                  onSendLocation={() => void handleSendLocation()}
-                />
-              </>
-            ) : (
-              <div className="flex min-h-[240px] flex-1 flex-col items-center justify-center p-6 text-center sm:p-8">
-                <div className="mb-4 rounded-full bg-muted p-4">
-                  <MessageCircle className="h-10 w-10 text-muted-foreground sm:h-12 sm:w-12" />
-                </div>
+              </span>
+              <div className="max-w-xs">
                 <p className="text-sm font-semibold text-foreground sm:text-base">
                   Selecione uma conversa
                 </p>
-                <p className="mt-1.5 max-w-[260px] text-xs text-muted-foreground sm:text-sm">
+                <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
                   {role === "profissional"
                     ? "Aqui aparecem as conversas com os clientes."
-                    : "Suas conversas com os profissionais aparecem aqui."}
+                    : "As suas conversas com os profissionais aparecem aqui."}
                 </p>
               </div>
-            )}
-          </main>
-        </div>
-      )}
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={role === "profissional" ? "/solicitacoes" : "/pesquisa"}
+                >
+                  <Search className="h-4 w-4" aria-hidden />
+                  {role === "profissional"
+                    ? "Ver solicitações"
+                    : "Procurar profissionais"}
+                </Link>
+              </Button>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

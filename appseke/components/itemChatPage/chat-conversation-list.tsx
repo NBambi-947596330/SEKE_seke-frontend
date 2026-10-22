@@ -1,10 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { Archive, ArchiveRestore, Loader2, MessageCircle, RefreshCw, Search } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Inbox,
+  Loader2,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatConversationTimestamp } from "@/lib/chat-format";
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
@@ -25,6 +33,26 @@ interface ChatConversationListProps {
   onToggleArchive: (conversation: ChatConversation) => void;
   /** Oculta a lista no mobile quando existe uma conversa aberta. */
   hiddenOnMobile: boolean;
+  /** Título da coluna de conversas. */
+  title?: string;
+  /** Texto auxiliar abaixo do título. */
+  subtitle?: string;
+}
+
+/** Esqueleto de uma linha da lista enquanto a API responde. */
+function ConversationRowSkeleton() {
+  return (
+    <div className="flex items-start gap-3 px-3 py-3">
+      <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Skeleton className="h-3.5 w-28" />
+          <Skeleton className="h-3 w-10" />
+        </div>
+        <Skeleton className="h-3 w-full" />
+      </div>
+    </div>
+  );
 }
 
 export default function ChatConversationList({
@@ -40,6 +68,8 @@ export default function ChatConversationList({
   onFilterChange,
   onToggleArchive,
   hiddenOnMobile,
+  title = "Conversas",
+  subtitle,
 }: ChatConversationListProps) {
   const query = search.trim().toLowerCase();
   const scoped = conversations.filter((c) =>
@@ -56,75 +86,112 @@ export default function ChatConversationList({
 
   const activeCount = conversations.filter((c) => !c.archived).length;
   const archivedCount = conversations.length - activeCount;
+  const unreadTotal = conversations.reduce(
+    (acc, c) => acc + (c.archived ? 0 : c.unreadCount),
+    0
+  );
 
   return (
     <aside
       className={cn(
-        "flex w-full shrink-0 flex-col border-r border-border bg-card sm:w-72 md:w-80",
+        "flex w-full shrink-0 flex-col bg-card sm:w-[19rem] md:w-[21rem] lg:w-[23rem]",
         hiddenOnMobile && "hidden sm:flex"
       )}
+      aria-label="Lista de conversas"
     >
-      {/* Pesquisa + filtro de arquivadas */}
-      <div className="space-y-2 p-2.5 sm:p-3">
+      {/* Cabeçalho da coluna */}
+      <div className="shrink-0 border-b border-border px-4 py-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-bold tracking-[-0.14px] text-foreground sm:text-[15px]">
+              {title}
+            </h2>
+            {subtitle ? (
+              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+          {unreadTotal > 0 ? (
+            <span className="mt-0.5 shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary-foreground">
+              {unreadTotal > 99 ? "99+" : unreadTotal} nova
+              {unreadTotal === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Pesquisa + separador de filtro */}
+      <div className="shrink-0 space-y-2.5 border-b border-border px-3 py-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
           <Input
             type="search"
             placeholder="Buscar conversas..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="h-9 rounded-lg border-border bg-card pl-9 text-sm sm:h-10"
             aria-label="Buscar conversas"
+            className="h-9 rounded-full border-transparent bg-muted pl-9 pr-3 text-sm shadow-none transition-colors placeholder:text-muted-foreground focus-visible:border-[#1876f2] focus-visible:bg-card"
           />
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {filter === "archived"
-              ? `${archivedCount} arquivada${archivedCount === 1 ? "" : "s"}`
-              : `${activeCount} conversa${activeCount === 1 ? "" : "s"}`}
-          </span>
-          {archivedCount > 0 ? (
-            <div className="flex items-center gap-1 rounded-full border border-border p-0.5">
-              <button
-                type="button"
-                onClick={() => onFilterChange("active")}
-                className={cn(
-                  "cursor-pointer rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                  filter === "active"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-pressed={filter === "active"}
-              >
-                Ativas
-              </button>
-              <button
-                type="button"
-                onClick={() => onFilterChange("archived")}
-                className={cn(
-                  "cursor-pointer rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                  filter === "archived"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-pressed={filter === "archived"}
-              >
-                Arquivadas
-              </button>
-            </div>
-          ) : null}
+
+        <div
+          role="tablist"
+          aria-label="Filtrar conversas"
+          className="flex items-center gap-1 rounded-full bg-muted p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === "active"}
+            onClick={() => onFilterChange("active")}
+            className={cn(
+              "flex-1 cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              filter === "active"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Ativas
+            <span className="ml-1 tabular-nums opacity-70">{activeCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={filter === "archived"}
+            onClick={() => onFilterChange("archived")}
+            disabled={archivedCount === 0}
+            className={cn(
+              "flex-1 cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+              filter === "archived"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Arquivadas
+            <span className="ml-1 tabular-nums opacity-70">{archivedCount}</span>
+          </button>
         </div>
       </div>
 
       {/* Lista */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {loading && conversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-8 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">A carregar conversas…</span>
+          <div aria-hidden>
+            <ConversationRowSkeleton />
+            <ConversationRowSkeleton />
+            <ConversationRowSkeleton />
+            <ConversationRowSkeleton />
+            <ConversationRowSkeleton />
           </div>
         ) : error && conversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-6 text-center">
+          <div
+            role="alert"
+            className="flex flex-col items-center justify-center gap-3 p-6 text-center"
+          >
             <p className="text-sm text-destructive">{error}</p>
             <Button type="button" size="sm" variant="outline" onClick={onRetry}>
               <RefreshCw className="h-3.5 w-3.5" />
@@ -133,49 +200,63 @@ export default function ChatConversationList({
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center text-muted-foreground">
-            <MessageCircle className="h-8 w-8 opacity-50" strokeWidth={1.5} />
-            <p className="text-sm">
+            <span className="rounded-full bg-muted p-3">
+              <Inbox className="h-6 w-6 opacity-70" strokeWidth={1.5} aria-hidden />
+            </span>
+            <p className="text-sm font-medium text-foreground">
               {query
                 ? "Nenhuma conversa encontrada."
                 : filter === "archived"
                   ? "Não tens conversas arquivadas."
                   : "Ainda não tens conversas."}
             </p>
-            {!query && filter === "active" && (
-              <p className="text-xs">
+            {!query && filter === "active" ? (
+              <p className="max-w-[16rem] text-xs">
                 Contacta um profissional a partir do perfil para começar.
               </p>
-            )}
+            ) : null}
           </div>
         ) : (
-          <ul>
+          <ul className="divide-y divide-border/60">
             {filtered.map((conversation) => {
               const avatarSrc = resolveUserAvatarUrl(conversation.participantAvatar);
               const active = conversation.id === selectedId;
+              const unread = conversation.unreadCount > 0;
+
               return (
                 <li key={conversation.id}>
                   <div
                     className={cn(
-                      "group relative flex w-full items-start gap-2.5 p-2.5 text-left transition-colors sm:gap-3 sm:p-3",
-                      active ? "bg-muted" : "hover:bg-accent"
+                      "group relative flex items-stretch transition-colors",
+                      active
+                        ? "bg-primary/[0.07]"
+                        : "hover:bg-muted/70"
                     )}
                   >
+                    {active ? (
+                      <span
+                        className="absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-primary"
+                        aria-hidden
+                      />
+                    ) : null}
+
                     <button
                       type="button"
                       onClick={() => onSelect(conversation.id)}
-                      className="flex min-w-0 flex-1 items-start gap-2.5 text-left sm:gap-3"
+                      aria-current={active ? "true" : undefined}
+                      className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
                     >
                       <span className="relative shrink-0">
                         <Image
                           src={avatarSrc}
-                          alt={conversation.participantName}
+                          alt=""
                           width={44}
                           height={44}
-                          className="h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11"
+                          className="h-11 w-11 rounded-full object-cover"
                           unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
                         />
-                        {conversation.unreadCount > 0 ? (
-                          <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground ring-2 ring-card">
+                        {unread ? (
+                          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-primary-foreground ring-2 ring-card">
                             {conversation.unreadCount > 99
                               ? "99+"
                               : conversation.unreadCount}
@@ -184,60 +265,77 @@ export default function ChatConversationList({
                       </span>
 
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center justify-between gap-2">
+                        <span className="flex items-baseline justify-between gap-2">
                           <span
                             className={cn(
-                              "truncate text-sm text-foreground",
-                              conversation.unreadCount > 0 && "font-bold"
+                              "truncate text-sm tracking-[-0.14px] text-foreground",
+                              unread ? "font-bold" : "font-semibold"
                             )}
                           >
                             {conversation.participantName}
                           </span>
                           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                            {formatConversationTimestamp(conversation.lastMessageAt)}
+                            {formatConversationTimestamp(
+                              conversation.lastMessageAt
+                            )}
                           </span>
                         </span>
 
                         {conversation.contextTitle ? (
-                          <span className="mt-0.5 block truncate text-xs text-primary">
-                            {conversation.contextTitle}
+                          <span className="mt-1 flex items-center gap-1.5">
+                            <span className="inline-flex max-w-[70%] items-center gap-1 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                              {conversation.contextTitle}
+                            </span>
+                            {conversation.archived ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                <Archive className="h-2.5 w-2.5" aria-hidden />
+                                Arquivada
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
-
-                        <span className="mt-0.5 block truncate text-sm text-muted-foreground">
-                          {conversation.lastMessage || "Sem mensagens"}
-                        </span>
-
-                        {conversation.archived ? (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            <Archive className="h-2.5 w-2.5" />
+                        ) : conversation.archived ? (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <Archive className="h-2.5 w-2.5" aria-hidden />
                             Arquivada
                           </span>
                         ) : null}
+
+                        <span
+                          className={cn(
+                            "mt-1 block truncate text-sm leading-snug",
+                            unread
+                              ? "font-medium text-foreground"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          {conversation.lastMessage || "Sem mensagens"}
+                        </span>
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => onToggleArchive(conversation)}
-                      className="absolute right-2 top-2 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                      aria-label={
-                        conversation.archived
-                          ? "Desarquivar conversa"
-                          : "Arquivar conversa"
-                      }
-                      title={
-                        conversation.archived
-                          ? "Desarquivar conversa"
-                          : "Arquivar conversa"
-                      }
-                    >
-                      {conversation.archived ? (
-                        <ArchiveRestore className="h-4 w-4" />
-                      ) : (
-                        <Archive className="h-4 w-4" />
-                      )}
-                    </button>
+                    <div className="flex shrink-0 items-center pr-2">
+                      <button
+                        type="button"
+                        onClick={() => onToggleArchive(conversation)}
+                        aria-label={
+                          conversation.archived
+                            ? `Restaurar conversa com ${conversation.participantName}`
+                            : `Arquivar conversa com ${conversation.participantName}`
+                        }
+                        title={
+                          conversation.archived
+                            ? "Restaurar conversa"
+                            : "Arquivar conversa"
+                        }
+                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground opacity-100 transition-colors hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:opacity-0 sm:group-hover:opacity-100"
+                      >
+                        {conversation.archived ? (
+                          <ArchiveRestore className="h-4 w-4" aria-hidden />
+                        ) : (
+                          <Archive className="h-4 w-4" aria-hidden />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </li>
               );
@@ -245,6 +343,14 @@ export default function ChatConversationList({
           </ul>
         )}
       </div>
+
+      {/* Estado de carga silenciosa (actualização periódica) */}
+      {loading && conversations.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          A actualizar conversas…
+        </div>
+      ) : null}
     </aside>
   );
 }

@@ -17,6 +17,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (excluded) return <>{children}</>
 
+  /**
+   * Páginas de mensagens: app de altura total. O conteúdo é encaixado entre
+   * a navbar fixa (`--app-nav-h`, medido em runtime) e a barra inferior no
+   * mobile, sem espaço para o rodapé — o scroll acontece dentro de cada painel.
+   */
+  if (isChatPage) {
+    return (
+      <div className="mx-auto flex h-[100dvh] w-full max-w-[1600px] flex-col overflow-hidden pt-[var(--app-nav-h,5rem)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:px-5 md:pb-0 lg:px-8">
+        {children}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="mx-auto w-full max-w-[1600px] px-3 sm:px-4 md:px-6 lg:px-8 pt-32 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pt-20 md:pb-10">

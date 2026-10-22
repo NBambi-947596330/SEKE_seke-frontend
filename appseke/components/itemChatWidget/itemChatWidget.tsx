@@ -13,17 +13,6 @@ import { formatConversationTimestamp } from "@/lib/chat-format";
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
 import type { ChatConversation } from "@/types/chat";
 
-/** Cores do projeto (light.ts): primary #2b81e5, surface #ffffff, border #c7ddf6, text #192f52, textSecondary #214b87 */
-const CHAT_COLORS = {
-  primary: "#2b81e5",
-  primaryHover: "#236bd2",
-  surface: "#ffffff",
-  background: "#f0f8fe",
-  border: "#c7ddf6",
-  text: "#192f52",
-  textSecondary: "#214b87",
-};
-
 const POLL_MS = 60_000;
 const PREVIEW_LIMIT = 5;
 
@@ -104,63 +93,58 @@ export default function ItemChatWidget({
   const badgeCount = unreadCount ?? apiUnread;
 
   return (
-    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-4 z-40 flex flex-col items-end gap-0 md:bottom-6 md:right-6 md:z-50">
-      {/* Painel expandido (comportamento igual LinkedIn: aparece por cima, cantos arredondados no topo) */}
+    <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-4 z-40 flex flex-col items-end gap-2 md:bottom-6 md:right-6 md:z-50">
+      {/* Painel expandido */}
       {isOpen && (
         <div
           ref={panelRef}
-          className="flex flex-col rounded-t-xl border border-b-0 shadow-lg overflow-hidden animate-in slide-in-from-bottom-4 duration-200"
+          className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
           style={{
             width: width,
             maxWidth: "calc(100vw - 24px)",
             height: height,
             maxHeight: "calc(100vh - 120px)",
-            backgroundColor: CHAT_COLORS.background,
-            borderColor: CHAT_COLORS.border,
           }}
         >
           {/* Header: cor sólida quando ativo (como LinkedIn), fundo claro quando inativo */}
           <div
-            className="flex items-center justify-between px-4 py-3 shrink-0"
-            style={{
-              backgroundColor: isFocused ? CHAT_COLORS.primary : CHAT_COLORS.surface,
-              color: isFocused ? "#FFFFFF" : CHAT_COLORS.text,
-              borderBottom: `1px solid ${CHAT_COLORS.border}`,
-            }}
+            className={cn(
+              "flex shrink-0 items-center justify-between px-4 py-3 transition-colors",
+              isFocused
+                ? "bg-primary text-primary-foreground"
+                : "bg-card text-foreground"
+            )}
             onMouseDown={() => setIsFocused(true)}
           >
-            <span className="font-semibold text-sm">{title}</span>
+            <span className="text-sm font-bold tracking-[-0.14px]">{title}</span>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-full hover:bg-white/20 text-inherit"
+              className="h-8 w-8 rounded-full border-0 text-inherit hover:bg-white/20"
               onClick={() => setIsOpen(false)}
               aria-label="Minimizar chat"
             >
-              <Minimize2 className="h-4 w-4" />
+              <Minimize2 className="h-4 w-4" aria-hidden />
             </Button>
           </div>
 
           {/* Corpo: lista de conversas ou conteúdo customizado */}
-          <div
-            className="flex-1 overflow-auto flex flex-col"
-            style={{ backgroundColor: CHAT_COLORS.background }}
-          >
+          <div className="flex flex-1 flex-col overflow-auto bg-muted/40">
             {children ?? (
               <div className="flex flex-1 flex-col">
                 {loading && conversations.length === 0 ? (
-                  <div
-                    className="flex flex-1 items-center justify-center p-4 text-sm"
-                    style={{ color: CHAT_COLORS.textSecondary }}
-                  >
+                  <div className="flex flex-1 items-center justify-center p-4 text-sm text-muted-foreground">
                     A carregar conversas…
                   </div>
                 ) : conversations.length === 0 ? (
-                  <div
-                    className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-sm"
-                    style={{ color: CHAT_COLORS.textSecondary }}
-                  >
-                    <MessageCircle className="h-8 w-8 opacity-50" strokeWidth={1.5} />
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+                    <span className="rounded-full bg-card p-3">
+                      <MessageCircle
+                        className="h-6 w-6 opacity-70"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      />
+                    </span>
                     <p>
                       Nenhuma conversa ainda.
                       <br />
@@ -168,7 +152,7 @@ export default function ItemChatWidget({
                     </p>
                   </div>
                 ) : (
-                  <ul>
+                  <ul className="divide-y divide-border/60">
                     {conversations.map((conversation) => {
                       const avatarSrc = resolveUserAvatarUrl(
                         conversation.participantAvatar
@@ -178,22 +162,19 @@ export default function ItemChatWidget({
                           <Link
                             href={`/chat?conversation=${encodeURIComponent(conversation.id)}`}
                             onClick={() => setIsOpen(false)}
-                            className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/70"
+                            className="flex items-start gap-3 px-4 py-3 no-underline transition-colors hover:bg-card"
                           >
                             <span className="relative shrink-0">
                               <Image
                                 src={avatarSrc}
-                                alt={conversation.participantName}
+                                alt=""
                                 width={40}
                                 height={40}
                                 className="h-10 w-10 rounded-full object-cover"
                                 unoptimized={userAvatarSrcUnoptimized(avatarSrc)}
                               />
                               {conversation.unreadCount > 0 ? (
-                                <span
-                                  className="absolute -bottom-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white"
-                                  style={{ backgroundColor: "#EF4444" }}
-                                >
+                                <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-white ring-2 ring-card">
                                   {conversation.unreadCount > 99
                                     ? "99+"
                                     : conversation.unreadCount}
@@ -201,29 +182,24 @@ export default function ItemChatWidget({
                               ) : null}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center justify-between gap-2">
+                              <span className="flex items-baseline justify-between gap-2">
                                 <span
                                   className={cn(
-                                    "truncate text-sm",
-                                    conversation.unreadCount > 0 && "font-bold"
+                                    "truncate text-sm tracking-[-0.14px] text-foreground",
+                                    conversation.unreadCount > 0
+                                      ? "font-bold"
+                                      : "font-semibold"
                                   )}
-                                  style={{ color: CHAT_COLORS.text }}
                                 >
                                   {conversation.participantName}
                                 </span>
-                                <span
-                                  className="shrink-0 text-[11px]"
-                                  style={{ color: CHAT_COLORS.textSecondary }}
-                                >
+                                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                                   {formatConversationTimestamp(
                                     conversation.lastMessageAt
                                   )}
                                 </span>
                               </span>
-                              <span
-                                className="mt-0.5 block truncate text-xs"
-                                style={{ color: CHAT_COLORS.textSecondary }}
-                              >
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                                 {conversation.lastMessage || "Sem mensagens"}
                               </span>
                             </span>
@@ -238,24 +214,20 @@ export default function ItemChatWidget({
           </div>
 
           {/* Rodapé: acesso à página completa de mensagens */}
-          <div
-            className="shrink-0 p-3 border-t"
-            style={{ backgroundColor: CHAT_COLORS.surface, borderColor: CHAT_COLORS.border }}
-          >
+          <div className="shrink-0 border-t border-border bg-card p-3">
             <Link
               href="/chat"
               onClick={() => setIsOpen(false)}
-              className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-colors"
-              style={{ backgroundColor: CHAT_COLORS.primary }}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-3 py-2.5 text-sm font-bold tracking-[-0.14px] text-primary-foreground no-underline transition-colors hover:bg-primary/90"
             >
-              <MessageCircle className="h-4 w-4" />
+              <MessageCircle className="h-4 w-4" aria-hidden />
               Abrir mensagens
             </Link>
           </div>
         </div>
       )}
 
-      {/* Bubble minimizado: clique abre o painel (comportamento LinkedIn) */}
+      {/* Bubble minimizado */}
       <button
         type="button"
         onClick={() => {
@@ -263,22 +235,14 @@ export default function ItemChatWidget({
           if (!isOpen) setIsFocused(true);
         }}
         className={cn(
-          "relative flex items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+          "relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         )}
-        style={{
-          width: 56,
-          height: 56,
-          backgroundColor: CHAT_COLORS.primary,
-        }}
         aria-label={isOpen ? "Fechar mensagens" : "Abrir mensagens"}
       >
-        <MessageCircle className="h-6 w-6 text-white" />
+        <MessageCircle className="h-6 w-6" aria-hidden />
         {badgeCount > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 flex min-w-[18px] h-[18px] items-center justify-center rounded-full text-xs font-bold text-white px-1"
-            style={{ backgroundColor: "#EF4444" }}
-          >
+          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-xs font-bold leading-none text-white ring-2 ring-background">
             {badgeCount > 99 ? "99+" : badgeCount}
           </span>
         )}
