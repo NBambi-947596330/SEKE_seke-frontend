@@ -9,7 +9,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/use-auth";
 import { useViewerUserId } from "@/lib/viewer-user-id";
-import { getClientGeolocation } from "@/lib/geolocation";
+import {
+  getCityFromCoords,
+  getClientGeolocation,
+  prefetchDeviceLocation,
+} from "@/lib/geolocation";
+import { playChatNotificationSound } from "@/lib/chat-notification-sound";
 import {
   archiveConversation,
   createConversation,
@@ -121,6 +126,10 @@ export default function ItemChatPage({
   /** Parâmetros da URL já aplicados (evita repor a selecção do utilizador). */
   const appliedConversationParamRef = useRef<string | null>(null);
   const appliedUserParamRef = useRef<string | null>(null);
+  /** Não lidas por conversa — detecta mensagens novas nas sondagens periódicas. */
+  const unreadSnapshotRef = useRef<Map<string, number> | null>(null);
+  /** IDs já conhecidos por conversa — detecta mensagens novas no thread aberto. */
+  const knownMessageIdsRef = useRef<Record<string, Set<string>>>({});
 
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -156,8 +165,23 @@ export default function ItemChatPage({
     });
 
     if (result.success) {
+      const snapshot = new Map(
+        result.data.conversations
+          .filter((conversation) => !conversation.archived)
+          .map((conversation) => [conversation.id, conversation.unreadCount])
+      );
+      const previous = unreadSnapshotRef.current;
+      const hasNewMessage =
+        previous !== null &&
+        [...snapshot].some(
+          ([id, unreadCount]) => unreadCount > (previous.get(id) ?? 0)
+        );
+
+      unreadSnapshotRef.current = snapshot;
       setConversations(result.data.conversations);
       setConversationsError(null);
+
+      if (hasNewMessage) playChatNotificationSound();
     } else {
       setConversationsError(result.error);
     }
@@ -172,6 +196,13 @@ export default function ItemChatPage({
       await loadConversations("full");
     })();
   }, [isAuthenticated, authLoading, loadConversations]);
+
+  // Pré-aquece a localização ao abrir o chat: pede a permissão e resolve a
+  // cidade. O envio volta sempre a pedir a posição actual do dispositivo.
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+    void prefetchDeviceLocation();
+  }, [isAuthenticated, authLoading]);
 
   // Actualização periódica (novas mensagens / contadores).
   useEffect(() => {
@@ -205,7 +236,7 @@ export default function ItemChatPage({
   const loadMessages = useCallback(
     async (
       conversationId: string,
-      options: { before?: string | null } = {}
+      options: { before?: string | null; notify?: boolean } = {}
     ) => {
       const token = getStoredToken();
       if (!token) return;
@@ -225,6 +256,20 @@ export default function ItemChatPage({
         return;
       }
 
+      // Detecta mensagens recebidas desde a última sondagem (só nas sondagens,
+      // não na carga inicial nem ao paginar o histórico).
+      const known = knownMessageIdsRef.current[conversationId];
+      const hasNewIncoming =
+        options.notify === true &&
+        known !== undefined &&
+        result.data.messages.some(
+          (message) => !message.isOwn && !known.has(message.id)
+        );
+
+      const nextKnown = known ?? new Set<string>();
+      for (const message of result.data.messages) nextKnown.add(message.id);
+      knownMessageIdsRef.current[conversationId] = nextKnown;
+
       updateThread(conversationId, (current) => ({
         ...current,
         messages: mergeMessages(current.messages, result.data.messages),
@@ -233,6 +278,21 @@ export default function ItemChatPage({
         loadingMore: false,
         error: null,
       }));
+
+      if (!hasNewIncoming) return;
+
+      playChatNotificationSound();
+
+      // A conversa está aberta — mantém o contador de não lidas a zero.
+      const read = await markConversationRead(token, conversationId);
+      if (!read.success) return;
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, unreadCount: 0 }
+            : conversation
+        )
+      );
     },
     [updateThread]
   );
@@ -259,7 +319,7 @@ export default function ItemChatPage({
     if (!selectedId) return;
     const id = window.setInterval(() => {
       void (async () => {
-        await loadMessages(selectedId);
+        await loadMessages(selectedId, { notify: true });
       })();
     }, MESSAGE_POLL_MS);
     return () => window.clearInterval(id);
@@ -558,7 +618,6 @@ export default function ItemChatPage({
   const handleSendLocation = useCallback(async () => {
     const token = getStoredToken();
     if (!token) return;
-
     // Localização como primeira mensagem: cria primeiro a conversa.
     let conversationId = selectedId;
     if (!conversationId) {
@@ -571,35 +630,46 @@ export default function ItemChatPage({
       }
     }
 
-    const geo = await getClientGeolocation();
-    if (!geo.success) {
-      toast.error(geo.message);
-      return;
-    }
-
     setSending(true);
-    const result = await sendMessage(token, {
-      conversationId,
-      type: "location",
-      latitude: geo.coords.latitude,
-      longitude: geo.coords.longitude,
-      locationLabel: "Localização atual",
-    });
-    setSending(false);
+    try {
+      // Envia sempre a posição actual do dispositivo: nunca reutiliza
+      // coordenadas em cache (o utilizador pode ter mudado de local).
+      const geo = await getClientGeolocation({ maximumAgeMs: 0 });
+      if (!geo.success) {
+        toast.error(geo.message);
+        return;
+      }
 
-    if (!result.success) {
-      toast.error(result.error);
-      return;
+      // Cidade real a partir das coordenadas (fallback se o serviço falhar).
+      const city = await getCityFromCoords(geo.coords);
+
+      const result = await sendMessage(token, {
+        conversationId,
+        type: "location",
+        content: "Estou aqui",
+        latitude: geo.coords.latitude,
+        longitude: geo.coords.longitude,
+        locationLabel: city ?? "Localização atual",
+      });
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.data) {
+        updateThread(conversationId, (current) => ({
+          ...current,
+          messages: mergeMessages(current.messages, [
+            result.data as ChatMessage,
+          ]),
+        }));
+      }
+      void (async () => {
+        await loadConversations("silent");
+      })();
+    } finally {
+      setSending(false);
     }
-    if (result.data) {
-      updateThread(conversationId, (current) => ({
-        ...current,
-        messages: mergeMessages(current.messages, [result.data as ChatMessage]),
-      }));
-    }
-    void (async () => {
-      await loadConversations("silent");
-    })();
   }, [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]);
 
   const handleDeleteMessage = useCallback(

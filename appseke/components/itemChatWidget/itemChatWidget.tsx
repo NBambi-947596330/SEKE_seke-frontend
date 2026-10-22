@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/use-auth";
 import { listConversations } from "@/lib/chat-client";
+import { playChatNotificationSound } from "@/lib/chat-notification-sound";
 import { formatConversationTimestamp } from "@/lib/chat-format";
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
 import type { ChatConversation } from "@/types/chat";
@@ -50,6 +51,8 @@ export default function ItemChatWidget({
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiUnread, setApiUnread] = useState(0);
+  /** Não lidas por conversa — detecta mensagens novas entre sondagens. */
+  const unreadSnapshotRef = useRef<Map<string, number> | null>(null);
 
   const load = useCallback(async (mode: "full" | "silent" = "silent") => {
     const token = getStoredToken();
@@ -58,8 +61,24 @@ export default function ItemChatWidget({
     try {
       const result = await listConversations(token, { limit: PREVIEW_LIMIT });
       if (result.success) {
-        setConversations(result.data.conversations.slice(0, PREVIEW_LIMIT));
+        const next = result.data.conversations.slice(0, PREVIEW_LIMIT);
+        const snapshot = new Map(
+          next
+            .filter((conversation) => !conversation.archived)
+            .map((conversation) => [conversation.id, conversation.unreadCount])
+        );
+        const previous = unreadSnapshotRef.current;
+        const hasNewMessage =
+          previous !== null &&
+          [...snapshot].some(
+            ([id, unreadCount]) => unreadCount > (previous.get(id) ?? 0)
+          );
+
+        unreadSnapshotRef.current = snapshot;
+        setConversations(next);
         setApiUnread(result.data.unreadTotal);
+
+        if (hasNewMessage) playChatNotificationSound();
       }
     } finally {
       if (mode === "full") setLoading(false);
@@ -89,6 +108,9 @@ export default function ItemChatWidget({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
+
+  // O botão flutuante só existe para utilizadores autenticados.
+  if (!isAuthenticated) return null;
 
   const badgeCount = unreadCount ?? apiUnread;
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useSyncExternalStore } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -8,12 +9,21 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  getChatSoundServerSnapshot,
+  getChatSoundSnapshot,
+  playChatNotificationSound,
+  setChatSoundEnabled,
+  subscribeChatSound,
+} from "@/lib/chat-notification-sound";
 import { formatConversationTimestamp } from "@/lib/chat-format";
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar";
 import type { ChatConversation } from "@/types/chat";
@@ -71,6 +81,19 @@ export default function ChatConversationList({
   title = "Conversas",
   subtitle,
 }: ChatConversationListProps) {
+  const soundEnabled = useSyncExternalStore(
+    subscribeChatSound,
+    getChatSoundSnapshot,
+    getChatSoundServerSnapshot
+  );
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setChatSoundEnabled(next);
+    // Ao reactivar, toca uma amostra para confirmar.
+    if (next) playChatNotificationSound();
+  };
+
   const query = search.trim().toLowerCase();
   const scoped = conversations.filter((c) =>
     filter === "archived" ? c.archived : !c.archived
@@ -112,12 +135,36 @@ export default function ChatConversationList({
               </p>
             ) : null}
           </div>
-          {unreadTotal > 0 ? (
-            <span className="mt-0.5 shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary-foreground">
-              {unreadTotal > 99 ? "99+" : unreadTotal} nova
-              {unreadTotal === 1 ? "" : "s"}
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {unreadTotal > 0 ? (
+              <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary-foreground">
+                {unreadTotal > 99 ? "99+" : unreadTotal} nova
+                {unreadTotal === 1 ? "" : "s"}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={toggleSound}
+              aria-label={
+                soundEnabled
+                  ? "Silenciar notificações"
+                  : "Ativar notificações"
+              }
+              aria-pressed={soundEnabled}
+              title={
+                soundEnabled
+                  ? "Silenciar notificações"
+                  : "Ativar notificações"
+              }
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {soundEnabled ? (
+                <Volume2 className="h-4 w-4" aria-hidden />
+              ) : (
+                <VolumeX className="h-4 w-4" aria-hidden />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,9 +1,11 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 
 import ItemChatWidget from "@/components/itemChatWidget/itemChatWidget"
+import { initChatNotificationSound } from "@/lib/chat-notification-sound"
 
 const EXCLUDED_PREFIXES = ["/auth", "/optionregister"]
 
@@ -14,6 +16,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const excluded = EXCLUDED_PREFIXES.some((prefix) => pathname?.startsWith(prefix))
   const isChatPage = CHAT_PAGES.some((page) => pathname === page)
+
+  // Prepara o som das notificações do chat (uma única vez por sessão).
+  useEffect(() => {
+    if (excluded) return
+    initChatNotificationSound()
+  }, [excluded])
 
   if (excluded) return <>{children}</>
 
