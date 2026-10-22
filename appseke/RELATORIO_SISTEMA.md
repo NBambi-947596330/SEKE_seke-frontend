@@ -208,6 +208,8 @@ Rota dedicada: `/profissional`
 
 **Criar conversa:** ao contactar um profissional a partir do perfil (`/chat?userId=…&name=…`), a conversa é criada no primeiro envio via `POST ?action=create-conversation`, com o texto escrito pelo cliente no campo `initial_message`. Se já existir conversa com esse profissional, a mesma é simplesmente aberta.
 
+**Sessão:** as acções de chat enviam o access token do `iam-auth?action=login` (`Authorization: Bearer`). Em resposta 401 o cliente renova a sessão com o `refresh_token` e repete o pedido uma vez; se a renovação falhar, pede ao utilizador para iniciar sessão novamente.
+
 ---
 
 ### 6.8 Pedidos

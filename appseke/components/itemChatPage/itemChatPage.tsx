@@ -342,7 +342,10 @@ export default function ItemChatPage({
 
       setPendingTargetId(null);
 
-      const list = await listConversations(token, {
+      // O token pode ter sido renovado no pedido anterior (401 → refresh),
+      // por isso voltamos a lê-lo ao storage.
+      const freshToken = getStoredToken() ?? token;
+      const list = await listConversations(freshToken, {
         includeArchived: true,
         limit: PAGE_LIMIT,
       });
@@ -504,7 +507,9 @@ export default function ItemChatPage({
         return;
       }
 
-      const result = await sendMessage(token, {
+      // O token pode ter sido renovado durante o upload (401 → refresh).
+      const freshToken = getStoredToken() ?? token;
+      const result = await sendMessage(freshToken, {
         conversationId,
         type: "image",
         mediaUrl: upload.data,

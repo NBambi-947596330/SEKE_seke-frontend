@@ -7,6 +7,8 @@ import type {
   ChatMessageType,
   ChatSendMessageInput,
 } from "@/types/chat"
+import { refreshStoredSession } from "@/lib/auth-client"
+import { extractTokenExpiryFromJwt } from "@/lib/jwt-user-id"
 
 /**
  * Cliente do módulo de mensagens (Supabase Edge Function `chat`).
@@ -17,6 +19,13 @@ import type {
  */
 
 const AUTH_API_BASE = process.env.NEXT_PUBLIC_URL_API_AUTH?.trim()
+
+/**
+ * Chave anon do Supabase (opcional). A função aceita o header `apikey`
+ * (já está na lista de `access-control-allow-headers`); só é enviado quando
+ * a variável está configurada.
+ */
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
 /** URL completa da função de chat (ex.: `…/functions/v1/chat`). */
 export const CHAT_API_URL = AUTH_API_BASE
@@ -364,6 +373,111 @@ interface ChatRequestInit {
   body?: unknown
 }
 
+/** Mensagem devolvida quando a sessão não é aceite pela função de chat. */
+const UNAUTHORIZED_MESSAGE =
+  "Sessão expirada ou inválida. Inicie sessão novamente."
+
+/** Lê o access token guardado no `sessionStorage`. */
+function readStoredToken(): string | null {
+  if (typeof window === "undefined") return null
+  const token = window.sessionStorage.getItem("auth_token")
+  return token && token.trim() ? token.trim() : null
+}
+
+/**
+ * Renova a sessão (`iam-auth?action=refresh`) e devolve o novo access token.
+ *
+ * Devolve `null` quando a renovação não é possível — ou quando devolve
+ * exatamente o mesmo token (repetir o pedido não mudaria o resultado).
+ */
+async function renewToken(token: string): Promise<string | null> {
+  const refresh = await refreshStoredSession()
+
+  if (!refresh.success) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[chat] não foi possível renovar a sessão:",
+        refresh.error ?? `HTTP ${refresh.statusCode ?? "?"}`
+      )
+    }
+    return null
+  }
+
+  const freshToken = readStoredToken()
+  if (!freshToken || freshToken === token.trim()) return null
+
+  return freshToken
+}
+
+/** Diagnóstico do 401 (token expirado / token não reconhecido). */
+function reportUnauthorized(action: string, token: string): void {
+  if (process.env.NODE_ENV === "production") return
+  const expiry = extractTokenExpiryFromJwt(token)
+  console.warn(`[chat] 401 em "${action}"`, {
+    expiracao: expiry ? new Date(expiry).toISOString() : "desconhecida",
+    expirado: expiry ? expiry <= Date.now() : null,
+    temRefreshToken:
+      typeof window !== "undefined" &&
+      !!window.sessionStorage.getItem("refresh_token"),
+  })
+}
+
+/** Executa um pedido à função de chat (sem tratamento de 401). */
+async function performChatRequest(
+  token: string,
+  action: string,
+  init: ChatRequestInit
+): Promise<ChatOutcome<unknown>> {
+  const url = new URL(CHAT_API_URL!)
+  url.searchParams.set("action", action)
+  for (const [key, value] of Object.entries(init.query ?? {})) {
+    if (value === undefined || value === null || value === "") continue
+    url.searchParams.set(key, String(value))
+  }
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: init.method,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
+        ...(init.body !== undefined
+          ? { "Content-Type": "application/json" }
+          : {}),
+      },
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      cache: "no-store",
+    })
+
+    const raw = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error:
+          extractErrorMessage(raw) ?? "Não foi possível completar a operação.",
+        statusCode: res.status,
+      }
+    }
+
+    return { success: true, data: raw }
+  } catch {
+    return {
+      success: false,
+      error: "Não foi possível contactar o serviço de mensagens.",
+      statusCode: 0,
+    }
+  }
+}
+
+/**
+ * Pedido à função de chat.
+ *
+ * Em **401** renova a sessão com o `refresh_token` e repete o pedido **uma
+ * vez** — o token do `iam-auth` tem validade curta e, sem esta renovação, uma
+ * sessão aberta há algum tempo passa a falhar em todas as acções de chat.
+ */
 async function chatRequest(
   token: string,
   action: string,
@@ -386,44 +500,22 @@ async function chatRequest(
     }
   }
 
-  const url = new URL(CHAT_API_URL)
-  url.searchParams.set("action", action)
-  for (const [key, value] of Object.entries(init.query ?? {})) {
-    if (value === undefined || value === null || value === "") continue
-    url.searchParams.set(key, String(value))
+  const result = await performChatRequest(trimmedToken, action, init)
+  if (result.success || result.statusCode !== 401) return result
+
+  reportUnauthorized(action, trimmedToken)
+
+  const freshToken = await renewToken(trimmedToken)
+  if (freshToken) {
+    const retried = await performChatRequest(freshToken, action, init)
+    if (retried.success) return retried
+    if (retried.statusCode !== 401) return retried
   }
 
-  try {
-    const res = await fetch(url.toString(), {
-      method: init.method,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${trimmedToken}`,
-        ...(init.body !== undefined
-          ? { "Content-Type": "application/json" }
-          : {}),
-      },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-      cache: "no-store",
-    })
-
-    const raw = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      return {
-        success: false,
-        error: extractErrorMessage(raw) ?? "Não foi possível completar a operação.",
-        statusCode: res.status,
-      }
-    }
-
-    return { success: true, data: raw }
-  } catch {
-    return {
-      success: false,
-      error: "Não foi possível contactar o serviço de mensagens.",
-      statusCode: 0,
-    }
+  return {
+    success: false,
+    error: UNAUTHORIZED_MESSAGE,
+    statusCode: 401,
   }
 }
 
@@ -714,20 +806,11 @@ export function pickMediaUrlFromResponse(raw: unknown): string | null {
   return null
 }
 
-/** Envia um ficheiro para o endpoint de upload e devolve a URL pública. */
-export async function uploadChatMedia(
+/** Envia um ficheiro para o endpoint de upload (sem tratamento de 401). */
+async function performMediaUpload(
   token: string,
   file: File
 ): Promise<ChatOutcome<string>> {
-  const trimmedToken = token.trim()
-  if (!trimmedToken) {
-    return {
-      success: false,
-      error: "Sessão inválida. Inicie sessão novamente.",
-      statusCode: 401,
-    }
-  }
-
   const form = new FormData()
   form.append("arquivo", file, file.name)
 
@@ -736,12 +819,13 @@ export async function uploadChatMedia(
       method: "POST",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${trimmedToken}`,
+        Authorization: `Bearer ${token}`,
       },
       body: form,
     })
 
     const raw = await res.json().catch(() => ({}))
+
     if (!res.ok) {
       return {
         success: false,
@@ -767,5 +851,41 @@ export async function uploadChatMedia(
       error: "Não foi possível enviar o ficheiro.",
       statusCode: 0,
     }
+  }
+}
+
+/**
+ * Envia um ficheiro para o endpoint de upload e devolve a URL pública.
+ * Em 401 renova a sessão e repete o envio uma vez.
+ */
+export async function uploadChatMedia(
+  token: string,
+  file: File
+): Promise<ChatOutcome<string>> {
+  const trimmedToken = token.trim()
+  if (!trimmedToken) {
+    return {
+      success: false,
+      error: "Sessão inválida. Inicie sessão novamente.",
+      statusCode: 401,
+    }
+  }
+
+  const result = await performMediaUpload(trimmedToken, file)
+  if (result.success || result.statusCode !== 401) return result
+
+  reportUnauthorized("upload", trimmedToken)
+
+  const freshToken = await renewToken(trimmedToken)
+  if (freshToken) {
+    const retried = await performMediaUpload(freshToken, file)
+    if (retried.success) return retried
+    if (retried.statusCode !== 401) return retried
+  }
+
+  return {
+    success: false,
+    error: UNAUTHORIZED_MESSAGE,
+    statusCode: 401,
   }
 }

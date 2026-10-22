@@ -468,6 +468,14 @@ Botões, inputs, dialogs, sheets, toast, skeleton, select, tooltip, password-inp
 - Imagem ou localização como primeira mensagem: a conversa é criada primeiro (sem `initial_message`) e a media é enviada logo a seguir.
 - Se o envio falhar, o texto mantém-se no campo para o utilizador poder tentar de novo.
 
+**Autenticação e 401 (`lib/chat-client.ts`)**
+
+- O token usado é o access token do `iam-auth?action=login`, guardado em `sessionStorage.auth_token` e enviado em `Authorization: Bearer <token>` (é o mesmo token indicado no contrato da API, obtido via `iam-auth?action=login`).
+- Em **401** o cliente renova a sessão com o `refresh_token` (`iam-auth?action=refresh`) e **repete o pedido uma vez** — o access token tem validade curta e, sem esta renovação, uma sessão aberta há algum tempo falha em todas as ações de chat. O mesmo vale para o envio de media (`POST /api/upload`).
+- Se a renovação falhar, é devolvido o erro *"Sessão expirada ou inválida. Inicie sessão novamente."* e o utilizador tem de iniciar sessão outra vez.
+- Em desenvolvimento, o cliente escreve na consola um aviso com a data de expiração do token e a existência de `refresh_token`, para distinguir "token expirado" de "token rejeitado pelo serviço".
+- Variável opcional `NEXT_PUBLIC_SUPABASE_ANON_KEY`: quando definida, o header `apikey` também é enviado (a função aceita-o no CORS). Só é necessária se a função exigir a chave anónima para além do Bearer token.
+
 ### 9.10 Configurações
 
 - UI de preferências, segurança, privacidade, visibilidade, ajuda.
