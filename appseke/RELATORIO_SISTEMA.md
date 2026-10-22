@@ -196,7 +196,7 @@ Rota dedicada: `/profissional`
 - Filtros de serviços.
 - Mensagens em `/profissional/mensagens`.
 - Barra lateral com navegação específica do profissional.
-- Widget flutuante de chat.
+- Widget flutuante de chat (montado globalmente no `AppShell`).
 
 ---
 
@@ -204,7 +204,7 @@ Rota dedicada: `/profissional`
 
 **Rotas:** `/chat` (cliente) e `/profissional/mensagens` (profissional)
 
-**Estado atual:** interface implementada com **conversas e mensagens simuladas (mock)**. A estrutura visual existe, mas ainda não está ligada a uma API de mensagens em tempo real.
+**Estado atual:** interface **integrada** com a Edge Function de mensagens (`{NEXT_PUBLIC_URL_API_AUTH}/chat?action=…`): listar/criar conversas, listar e enviar mensagens (texto, imagem, localização), marcar como lida, arquivar e apagar mensagens. Actualização por *polling* (30 s para a lista de conversas, 15 s para a conversa aberta); ainda não existe canal WebSocket. O widget flutuante de mensagens está montado no `AppShell` (oculto nas páginas de mensagens).
 
 ---
 
@@ -242,7 +242,7 @@ Os termos e a política de privacidade são exigidos no momento do registo.
 
 ```
 Registo → Login → Feed → Explorar profissionais → Ver perfil → Seguir
-                                              → Chat (UI mock)
+                                              → Chat (integrado)
                                               → Meus pedidos (placeholder)
 ```
 
@@ -252,7 +252,7 @@ Registo → Login → Feed → Explorar profissionais → Ver perfil → Seguir
 Registo → Dados profissionais → Login → Feed → Criar publicações
                                             → Registar serviços no marketplace
                                             → Painel profissional
-                                            → Mensagens (UI mock)
+                                            → Mensagens (integrado)
 ```
 
 ### 7.3 Fluxo de Publicação
@@ -282,7 +282,8 @@ Criar post → Upload de media (opcional) → Guardar rascunho ou publicar
 | Marketplace | categorias, serviços, meus serviços | Integrado |
 | Perfil profissional | criar/atualizar perfil | Integrado |
 | Upload | envio de ficheiros para media | Integrado |
-| Chat / Pedidos / Dashboard stats | — | Não integrado (mock ou placeholder) |
+| Chat | conversas, mensagens, enviar, marcar lida, arquivar | Integrado (Edge Function) |
+| Pedidos / Dashboard stats | — | Não integrado (mock ou placeholder) |
 
 ---
 
@@ -317,12 +318,12 @@ appseke/
 - Perfil próprio e perfil público
 - Marketplace de serviços (criar e listar)
 - Upload de imagens e vídeos
+- Chat e mensagens (Edge Function: conversas, envio de texto/imagem/localização, leitura, arquivo)
 - Termos de uso e política de privacidade
 
 ### Funcionalidades parcialmente implementadas
 
 - Área do profissional (UI pronta, dados mock)
-- Chat (interface pronta, sem API)
 - Pedidos (página placeholder)
 - Categorias de profissionais (dados mock)
 - Configurações (UI estática)
@@ -351,7 +352,7 @@ appseke/
 
 O **Seke** é uma plataforma web angolana que une **rede social** e **marketplace de serviços**, permitindo que clientes encontrem profissionais e que estes divulguem o seu trabalho, publiquem conteúdos e registem serviços.
 
-O núcleo do sistema — **autenticação, feed, publicações, perfis, interações sociais e marketplace** — encontra-se **operacional e integrado com a API externa**. Outras áreas, como **chat, pedidos e painel analítico do profissional**, possuem interface preparada, mas ainda aguardam integração completa com o backend.
+O núcleo do sistema — **autenticação, feed, publicações, perfis, interações sociais e marketplace** — encontra-se **operacional e integrado com a API externa**. O **chat** deixou de ser mock e está ligado à Edge Function de mensagens. Outras áreas, como **pedidos e painel analítico do profissional**, possuem interface preparada, mas ainda aguardam integração completa com o backend.
 
 Em síntese, o Seke funciona hoje como uma **plataforma de conexão e visibilidade profissional**, com base sólida para evoluir para gestão de pedidos, mensagens em tempo real e funcionalidades avançadas de negócio.
 
