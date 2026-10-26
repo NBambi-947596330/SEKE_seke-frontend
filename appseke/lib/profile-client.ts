@@ -15,6 +15,11 @@ import {
   readStoredProfileType,
 } from "@/lib/account-role"
 import { refreshStoredSession } from "@/lib/auth-client"
+import {
+  buildPublicStorageUrl,
+  getStoragePublicUrl,
+  normalizeStorageObjectPath,
+} from "@/lib/storage-client"
 
 type JsonResult<T> =
   | { success: true; data: T }
@@ -27,9 +32,18 @@ const UPDATE_PROFILE_API = AUTH_API_BASE
 const UPDATE_AVATAR_API = AUTH_API_BASE
   ? `${AUTH_API_BASE.replace(/\/$/, "")}/iam-auth?action=update-avatar`
   : "/api/profile/avatar"
+/** Edge Functions de storage: avatar e capa (`file` + `userType`). */
 const UPLOAD_AVATAR_API = AUTH_API_BASE
-  ? `${AUTH_API_BASE.replace(/\/$/, "")}/iam-auth?action=upload-avatar`
+  ? `${AUTH_API_BASE.replace(/\/$/, "")}/storage?action=upload-avatar`
   : "/api/profile/avatar"
+const UPLOAD_COVER_API = AUTH_API_BASE
+  ? `${AUTH_API_BASE.replace(/\/$/, "")}/storage?action=upload-cover`
+  : null
+
+/** Papel enviado no formulário do storage para escolher o bucket/pasta certos. */
+export type ProfileStorageUserType = "client" | "professional"
+/** @deprecated Use `ProfileStorageUserType`. */
+export type ProfileAvatarUserType = ProfileStorageUserType
 
 /** Limite do campo avatarUrl aceite pelo IAM (action=update-avatar). */
 export const MAX_AVATAR_URL_LENGTH = 2048
@@ -85,10 +99,10 @@ async function parseJsonResponse<T>(res: Response): Promise<JsonResult<T>> {
     const message =
       typeof data.message === "string" && data.message.trim()
         ? data.message
-        : typeof nested?.code === "string" && nested.code.trim()
-          ? nested.code
-          : typeof nested?.message === "string" && nested.message.trim()
-            ? nested.message
+        : typeof nested?.message === "string" && nested.message.trim()
+          ? nested.message
+          : typeof nested?.code === "string" && nested.code.trim()
+            ? nested.code
             : "Pedido falhou."
     return {
       success: false,
@@ -273,27 +287,35 @@ export async function updateProfileAvatar(
   return parseJsonResponse(res)
 }
 
-/** PATCH {AUTH}/iam-auth?action=upload-avatar (FormData `avatar`) ou PUT /api/profile/avatar (legado). */
-export async function uploadProfileAvatarFile(
+type StorageAssetOutcome = JsonResult<{ url: string | null }>
+
+/**
+ * Envia um ficheiro para uma Edge Function de storage do perfil
+ * (`upload-avatar` / `upload-cover`) em multipart: `file` + `userType`.
+ *
+ * Sem `NEXT_PUBLIC_URL_API_AUTH`, o avatar mantém o fallback legado
+ * `PUT /api/profile/avatar` (`user_id` + `avatar`).
+ */
+async function performStorageAssetUpload(
+  endpoint: string | null,
   token: string,
   userId: string,
-  file: File
-): Promise<JsonResult<{ url: string | null }>> {
-  const trimmedUserId = userId.trim()
-  if (!trimmedUserId) {
-    return { success: false, error: "O campo user_id é obrigatório." }
-  }
-
+  file: File,
+  userType: ProfileStorageUserType,
+  legacyField: "avatar" | "cover"
+): Promise<StorageAssetOutcome> {
+  const useStorage = !!AUTH_API_BASE && !!endpoint
   const form = new FormData()
-  if (AUTH_API_BASE) {
-    form.append("avatar", file, file.name)
+  if (useStorage) {
+    form.append("file", file, file.name || "imagem")
+    form.append("userType", userType)
   } else {
-    form.append("user_id", trimmedUserId)
-    form.append("avatar", file, file.name)
+    form.append("user_id", userId)
+    form.append(legacyField, file, file.name || "imagem")
   }
 
-  const res = await fetch(UPLOAD_AVATAR_API, {
-    method: AUTH_API_BASE ? "PATCH" : "PUT",
+  const res = await fetch(useStorage ? (endpoint as string) : "/api/profile/avatar", {
+    method: useStorage ? "POST" : "PUT",
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
@@ -304,13 +326,117 @@ export async function uploadProfileAvatarFile(
   const parsed = await parseJsonResponse(res)
   if (!parsed.success) return parsed
 
-  return { success: true, data: { url: pickAvatarUrlFromResponse(parsed.data) } }
+  const picked = pickStorageAssetFromResponse(parsed.data)
+  let url = picked.url
+  if (!url && picked.path) {
+    const resolved = await getStoragePublicUrl(token, picked.path)
+    url = resolved.success ? resolved.url : buildPublicStorageUrl(picked.path)
+  }
+
+  return { success: true, data: { url } }
 }
 
-function pickAvatarUrlFromResponse(raw: unknown): string | null {
-  if (!raw || typeof raw !== "object") return null
+/** Executa o upload e, em 401, renova a sessão e repete uma vez. */
+async function uploadWithSessionRefresh(
+  token: string,
+  run: (activeToken: string) => Promise<StorageAssetOutcome>
+): Promise<StorageAssetOutcome> {
+  const first = await run(token)
+  if (first.success || !isUnauthorizedOutcome(first)) return first
+
+  const refresh = await refreshStoredSession()
+  if (!refresh.success) return first
+
+  const refreshedToken =
+    typeof window !== "undefined"
+      ? window.sessionStorage.getItem("auth_token")
+      : null
+  if (!refreshedToken || refreshedToken === token) return first
+
+  return run(refreshedToken)
+}
+
+/** Envia o avatar do utilizador (`storage?action=upload-avatar`). */
+export async function uploadProfileAvatarFile(
+  token: string,
+  userId: string,
+  file: File,
+  userType: ProfileStorageUserType = "client"
+): Promise<StorageAssetOutcome> {
+  const trimmedToken = token.trim()
+  const trimmedUserId = userId.trim()
+  if (!trimmedUserId) {
+    return { success: false, error: "O campo user_id é obrigatório." }
+  }
+  if (!trimmedToken) {
+    return { success: false, error: "Sessão inválida. Inicie sessão novamente." }
+  }
+
+  return uploadWithSessionRefresh(trimmedToken, (activeToken) =>
+    performStorageAssetUpload(
+      UPLOAD_AVATAR_API,
+      activeToken,
+      trimmedUserId,
+      file,
+      userType,
+      "avatar"
+    )
+  )
+}
+
+/** Envia a imagem de capa do perfil (`storage?action=upload-cover`). */
+export async function uploadProfileCoverFile(
+  token: string,
+  userId: string,
+  file: File,
+  userType: ProfileStorageUserType = "client"
+): Promise<StorageAssetOutcome> {
+  const trimmedToken = token.trim()
+  const trimmedUserId = userId.trim()
+  if (!trimmedToken) {
+    return { success: false, error: "Sessão inválida. Inicie sessão novamente." }
+  }
+  if (!UPLOAD_COVER_API) {
+    return {
+      success: false,
+      error: "Serviço de armazenamento não configurado.",
+      statusCode: 503,
+    }
+  }
+
+  return uploadWithSessionRefresh(trimmedToken, (activeToken) =>
+    performStorageAssetUpload(
+      UPLOAD_COVER_API,
+      activeToken,
+      trimmedUserId,
+      file,
+      userType,
+      "cover"
+    )
+  )
+}
+
+function isAbsoluteAssetUrl(value: string): boolean {
+  return (
+    /^https?:\/\//i.test(value) ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("/")
+  )
+}
+
+/**
+ * Separa a resposta do storage numa URL pronta ou num caminho de objeto
+ * (que depois é resolvido com `storage?action=get-url`).
+ */
+function pickStorageAssetFromResponse(raw: unknown): {
+  url: string | null
+  path: string | null
+} {
+  if (!raw || typeof raw !== "object") return { url: null, path: null }
   const queue: Record<string, unknown>[] = [raw as Record<string, unknown>]
   const seen = new Set<Record<string, unknown>>()
+  let storedPath: string | null = null
 
   while (queue.length > 0) {
     const node = queue.shift()!
@@ -318,18 +444,36 @@ function pickAvatarUrlFromResponse(raw: unknown): string | null {
     seen.add(node)
 
     for (const key of [
+      "publicUrl",
+      "public_url",
+      "cover",
+      "coverUrl",
+      "cover_url",
+      "cover_photo_url",
+      "cove_image",
+      "coveImage",
       "avatar",
       "avatarUrl",
       "avatar_url",
       "profile_photo_url",
+      "secure_url",
+      "secureUrl",
+      "media_url",
+      "mediaUrl",
       "image",
       "url",
+      "fullPath",
+      "full_path",
+      "path",
     ]) {
       const value = node[key]
-      if (typeof value === "string" && value.trim()) return value.trim()
+      if (typeof value !== "string" || !value.trim()) continue
+      const trimmed = value.trim()
+      if (isAbsoluteAssetUrl(trimmed)) return { url: trimmed, path: null }
+      if (!storedPath) storedPath = trimmed
     }
 
-    for (const key of ["data", "user", "profile"]) {
+    for (const key of ["data", "user", "profile", "file", "upload", "result"]) {
       const nested = node[key]
       if (nested && typeof nested === "object" && !Array.isArray(nested)) {
         queue.push(nested as Record<string, unknown>)
@@ -337,7 +481,10 @@ function pickAvatarUrlFromResponse(raw: unknown): string | null {
     }
   }
 
-  return null
+  return {
+    url: null,
+    path: storedPath ? normalizeStorageObjectPath(storedPath) : null,
+  }
 }
 
 export async function updateProfileLocation(

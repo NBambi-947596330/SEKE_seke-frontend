@@ -543,7 +543,7 @@ Resumo das alterações implementadas no frontend:
 - Sidebar com **métricas reais** (substitui “Actividades” e “Ferramentas” estáticos).
 - Edição inline de biografia e campos com acções ✓/✕.
 - Modal “Editar perfil” simplificado (nome).
-- Upload de avatar profissional via rota dedicada `/professionals/:id/avatar`.
+- Upload de avatar e capa via `storage?action=upload-avatar` / `storage?action=upload-cover` (multipart `file` + `userType`).
 - Botões de acção reduzidos/mais discretos.
 
 ### Profissionais
@@ -559,10 +559,15 @@ Resumo das alterações implementadas no frontend:
 - Modal “Propostas recebidas” em painel lateral (estilo Explorar).
 - Cards de proposta com avatar, rating, acções aceitar/rejeitar.
 
-### Avatar profissional
-- BFF em `/api/professionals/[id]/avatar`.
-- Cliente `uploadProfessionalAvatarFile` (multipart POST).
-- Resolução de `professionalId` via perfil e serviços do utilizador.
+### Avatar e capa (cliente/profissional)
+- Avatar: `POST {NEXT_PUBLIC_URL_API_AUTH}/storage?action=upload-avatar`.
+- Capa: `POST {NEXT_PUBLIC_URL_API_AUTH}/storage?action=upload-cover`.
+- Multipart em ambos: `file` (imagem) + `userType` (`client` | `professional`), Bearer token.
+- Clientes `uploadProfileAvatarFile` e `uploadProfileCoverFile` em `lib/profile-client.ts`; a página de perfil escolhe o `userType` pelo papel ativo.
+- A `publicUrl` devolvida é guardada no perfil (`avatar` / `cove_image`) e o perfil é recarregado.
+- Em `iam-{client|professional}?action=me`, o avatar/capa são lidos primeiro de `data.profile` (registo de domínio, onde o upload grava) e só depois do topo/IAM (`data.user`), que pode estar desatualizado. Assim `/perfil` e `/detalhesuser` mostram a mesma imagem.
+- Caminhos de objeto (`id_client/…`, `id_professional/…`) são resolvidos com `GET {NEXT_PUBLIC_URL_API_AUTH}/storage?action=get-url&path=…`; `resolveUserAvatarUrl` também converte esses caminhos para a URL pública na exibição.
+- O `iam-auth?action=update-avatar` e as rotas antigas (`/api/profile/avatar`, `/professionals/[id]/avatar`) ficam como legado.
 
 ---
 
@@ -572,8 +577,9 @@ Resumo das alterações implementadas no frontend:
 |---------|--------|-------|
 | Autenticação (credenciais) | ✅ Integrado | JWT em sessionStorage |
 | Autenticação (Google) | ✅ Integrado | NextAuth |
-| Perfil (CRUD, avatar, localização) | ✅ Integrado | |
-| Avatar profissional | ⚠️ Parcial | BFF pronto; depende da rota no backend Render |
+| Perfil (CRUD, avatar, capa, localização) | ✅ Integrado | |
+| Avatar profissional | ✅ Integrado | `storage?action=upload-avatar` (`file` + `userType`) |
+| Capa do perfil | ✅ Integrado | `storage?action=upload-cover` (`file` + `userType`) |
 | Feed e posts | ✅ Integrado | |
 | Curtidas e seguidores | ✅ Integrado | |
 | Notificações | ✅ Integrado | |

@@ -9,6 +9,51 @@ function toCoordNumber(value: unknown): number | null {
   return null
 }
 
+const PROFILE_TYPE_KEYS = [
+  "profile_type",
+  "profileType",
+  "type",
+  "account_type",
+  "accountType",
+  "user_type",
+  "userType",
+  "role",
+] as const
+
+/** Lê a indicação de tipo de conta (`client` / `professional`) de um bloco. */
+function readProfileTypeHint(
+  source: Record<string, unknown> | null
+): string | null {
+  if (!source) return null
+  for (const key of PROFILE_TYPE_KEYS) {
+    const value = source[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested = value as Record<string, unknown>
+      const name = nested.name ?? nested.type ?? nested.slug
+      if (typeof name === "string" && name.trim()) return name.trim()
+    }
+  }
+  return null
+}
+
+function isProfessionalType(value: string | null): boolean {
+  if (!value) return false
+  const normalized = value.toLowerCase()
+  return normalized === "professional" || normalized === "profissional"
+}
+
+function isClientType(value: string | null): boolean {
+  if (!value) return false
+  const normalized = value.toLowerCase()
+  return (
+    normalized === "client" ||
+    normalized === "cliente" ||
+    normalized === "pessoal" ||
+    normalized === "personal"
+  )
+}
+
 /** Extrai o objeto `data` de `{ success, data }` ou devolve o próprio objeto. */
 export function unwrapProfilePayload(raw: unknown): ProfileApiData | null {
   if (!raw || typeof raw !== "object") return null
@@ -49,15 +94,30 @@ export function unwrapProfilePayload(raw: unknown): ProfileApiData | null {
       // iam-professional?action=me → data.profile contém os campos profissionais
       // (tarifa, título, habilidades...). Expor como bloco `professional` para o
       // resto do frontend (extractProfessionalProfileFields, rating, etc.).
+      // Um perfil de cliente também pode ter capa, por isso `cover_photo_url`
+      // não serve para distinguir os dois tipos.
       const profileRec = subProfile as Record<string, unknown>
-      const hasProfessionalFields =
-        "title" in profileRec ||
-        "category" in profileRec ||
-        "skills" in profileRec ||
-        "hourly_rate" in profileRec ||
-        "cover_photo_url" in profileRec
-      if (hasProfessionalFields && typeof profileRec.user_id === "string") {
+      const typeHint =
+        readProfileTypeHint(profileRec) ?? readProfileTypeHint(user)
+      const hasProfessionalFields = [
+        "title",
+        "category",
+        "skills",
+        "hourly_rate",
+        "professional_id",
+        "is_verified",
+        "is_available",
+      ].some((key) => key in profileRec)
+      const isProfessionalProfile =
+        isProfessionalType(typeHint) ||
+        (!isClientType(typeHint) && hasProfessionalFields)
+
+      if (isProfessionalProfile) {
         flattened.professional = profileRec
+      } else {
+        // iam-client?action=me → data.profile é o registo do cliente, que pode
+        // conter avatar/capa mais recentes do que o `data.user` (IAM).
+        flattened.client = profileRec
       }
 
       return flattened as unknown as ProfileApiData
@@ -168,17 +228,94 @@ export function mapProfileApiToPerfilUser(data: ProfileApiData): {
     throw new Error("Resposta do perfil sem id de utilizador.")
   }
 
-  const photo =
-    typeof data.profile_photo_url === "string" && data.profile_photo_url.trim()
-      ? data.profile_photo_url.trim()
-      : undefined
+  const photo = readProfilePhotoUrl(data)
 
   return {
     id: userId,
     name: data.full_name?.trim() || undefined,
     email: data.email?.trim() || undefined,
-    avatar: photo,
+    // Não incluir a chave quando não há foto, para não limpar, num merge,
+    // um avatar já carregado.
+    ...(photo ? { avatar: photo } : {}),
   }
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function readTrimmedString(
+  source: Record<string, unknown> | null,
+  keys: string[]
+): string | undefined {
+  if (!source) return undefined
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+const NESTED_PROFILE_PHOTO_KEYS = [
+  "profile_photo_url",
+  "profilePhotoUrl",
+  "avatar",
+  "avatar_url",
+  "avatarUrl",
+  "photo_url",
+]
+
+/** No utilizador do IAM, `avatar` é o campo que `/users/{id}` também prefere. */
+const ROOT_PROFILE_PHOTO_KEYS = [
+  "avatar",
+  "avatar_url",
+  "avatarUrl",
+  "profile_photo_url",
+  "profilePhotoUrl",
+  "photo_url",
+]
+
+/**
+ * Avatar do perfil.
+ *
+ * `iam-{client|professional}?action=me` devolve o utilizador em `data.user`
+ * (IAM) e o registo de domínio em `data.profile`. O avatar atualizado é
+ * gravado no registo de domínio, por isso os blocos `professional`/`client`
+ * têm prioridade sobre o campo no topo (que pode estar desatualizado).
+ */
+export function readProfilePhotoUrl(
+  data: ProfileApiData
+): string | undefined {
+  const root = data as unknown as Record<string, unknown>
+  return (
+    readTrimmedString(toRecord(data.professional), NESTED_PROFILE_PHOTO_KEYS) ??
+    readTrimmedString(toRecord(data.client), NESTED_PROFILE_PHOTO_KEYS) ??
+    readTrimmedString(root, ROOT_PROFILE_PHOTO_KEYS)
+  )
+}
+
+/** Imagem de capa no perfil (campo legado `cove_image` ou `cover_photo_url`). */
+function readCoverImage(data: ProfileApiData): string | undefined {
+  const root = data as unknown as Record<string, unknown>
+
+  for (const source of [
+    toRecord(data.professional),
+    toRecord(data.client),
+    root,
+  ]) {
+    const value = readTrimmedString(source, [
+      "cove_image",
+      "cover_photo_url",
+      "cover_image",
+      "coverUrl",
+      "cover_url",
+    ])
+    if (value) return value
+  }
+
+  return undefined
 }
 
 export function mapProfileApiToPerfilInfo(
@@ -188,7 +325,7 @@ export function mapProfileApiToPerfilInfo(
     ? data.roles.filter((r): r is string => typeof r === "string")
     : []
 
-  return {
+  const mapped: Record<string, unknown> = {
     bio:
       typeof data.bio === "string"
         ? data.bio
@@ -209,4 +346,10 @@ export function mapProfileApiToPerfilInfo(
     member_since:
       typeof data.created_at === "string" ? data.created_at : undefined,
   }
+
+  // Só incluir quando existe, para não apagar a capa já carregada.
+  const coverImage = readCoverImage(data)
+  if (coverImage) mapped.cove_image = coverImage
+
+  return mapped
 }

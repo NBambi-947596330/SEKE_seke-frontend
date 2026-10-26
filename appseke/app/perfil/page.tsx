@@ -56,6 +56,7 @@ import { extractUserIdFromJwt } from "@/lib/jwt-user-id"
 import { getStoredUserId } from "@/lib/viewer-user-id"
 import { buildDetalhesUserHref } from "@/lib/detalhes-user-href"
 import { resolveUserAvatarUrl, userAvatarSrcUnoptimized } from "@/lib/user-avatar"
+import { resolveStorageAssetUrl } from "@/lib/storage-client"
 import { compressImageToJpegDataUrl } from "@/lib/compress-image-client"
 import {
   NetworkListSkeleton,
@@ -72,6 +73,7 @@ import {
   updateProfileAvatar,
   updateProfileLocation,
   uploadProfileAvatarFile,
+  uploadProfileCoverFile,
 } from "@/lib/profile-client"
 import type { ProfileRatingSummary, ProfileStats } from "@/types/auth"
 import { getClientGeolocation, type GeoCoords } from "@/lib/geolocation"
@@ -801,6 +803,18 @@ export default function PerfilPage() {
 
       try {
         const mapped = mapProfileApiToPerfilUser(apiProfile)
+        const resolvedAvatar = await resolveStorageAssetUrl(token, mapped.avatar)
+        if (resolvedAvatar) mapped.avatar = resolvedAvatar
+
+        const mappedInfo = mapProfileApiToPerfilInfo(apiProfile)
+        if (typeof mappedInfo.cove_image === "string") {
+          const resolvedCover = await resolveStorageAssetUrl(
+            token,
+            mappedInfo.cove_image
+          )
+          if (resolvedCover) mappedInfo.cove_image = resolvedCover
+        }
+
         setProfessionalId(extractProfessionalId(apiProfile))
         setPerfilUser((prev) => ({
           ...(prev ?? {}),
@@ -808,7 +822,7 @@ export default function PerfilPage() {
         }))
         setPerfilInfo((prev) => ({
           ...(prev ?? {}),
-          ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
+          ...(mappedInfo as Partial<PerfilInfo>),
         }))
         const proFields = extractProfessionalProfileFields(apiProfile)
         if (proFields) {
@@ -1019,6 +1033,18 @@ export default function PerfilPage() {
 
         if (updatedProfile && extractProfileUserId(updatedProfile)) {
           const mapped = mapProfileApiToPerfilUser(updatedProfile)
+          const resolvedAvatar = await resolveStorageAssetUrl(token, mapped.avatar)
+          if (resolvedAvatar) mapped.avatar = resolvedAvatar
+
+          const mappedInfo = mapProfileApiToPerfilInfo(updatedProfile)
+          if (typeof mappedInfo.cove_image === "string") {
+            const resolvedCover = await resolveStorageAssetUrl(
+              token,
+              mappedInfo.cove_image
+            )
+            if (resolvedCover) mappedInfo.cove_image = resolvedCover
+          }
+
           setPerfilUser((prev) => ({
             ...(prev ?? {}),
             ...mapped,
@@ -1029,7 +1055,7 @@ export default function PerfilPage() {
           }))
           setPerfilInfo((prev) => ({
             ...(prev ?? {}),
-            ...(mapProfileApiToPerfilInfo(updatedProfile) as Partial<PerfilInfo>),
+            ...(mappedInfo as Partial<PerfilInfo>),
           }))
           syncUserDataInSession({
             id: mapped.id,
@@ -1267,9 +1293,46 @@ export default function PerfilPage() {
       try {
         const dataUrl = await compressImageToJpegDataUrl(file)
         setCoverPreviewSrc(dataUrl)
+
+        const token = window.sessionStorage.getItem("auth_token")
+        if (!token) {
+          toast.error("Sessão inválida. Inicie sessão novamente.")
+          setCoverPreviewSrc("")
+          return
+        }
+        const userId = await resolveProfileUserId(token, profileUserId)
+        if (!userId) {
+          toast.error("Identificador do utilizador em falta.")
+          setCoverPreviewSrc("")
+          return
+        }
+
+        const userType =
+          accountRole ??
+          (isProfessionalUser(perfilInfo?.profile_type)
+            ? "professional"
+            : "client")
+
+        const upload = await uploadProfileCoverFile(
+          token,
+          userId,
+          file,
+          userType
+        )
+        const coverUrl = upload.success ? upload.data.url : null
+        if (!coverUrl) {
+          toast.error(
+            upload.success
+              ? "O servidor não devolveu o endereço da imagem."
+              : upload.error
+          )
+          setCoverPreviewSrc("")
+          return
+        }
+
         const nextForm = {
           ...buildProfileFormState(),
-          cove_image: dataUrl,
+          cove_image: coverUrl,
         }
         setProfileForm(nextForm)
         const saved = await persistProfile(nextForm, false)
@@ -1279,7 +1342,7 @@ export default function PerfilPage() {
         }
         setPerfilInfo((prev) => ({
           ...(prev ?? {}),
-          cove_image: dataUrl,
+          cove_image: coverUrl,
         }))
       } catch (err) {
         toast.error(
@@ -1289,7 +1352,14 @@ export default function PerfilPage() {
         setCoverUploading(false)
       }
     },
-    [buildProfileFormState, persistProfile, toast]
+    [
+      accountRole,
+      buildProfileFormState,
+      persistProfile,
+      perfilInfo?.profile_type,
+      profileUserId,
+      toast,
+    ]
   )
 
   const openCoverFilePicker = useCallback(() => {
@@ -1329,33 +1399,57 @@ export default function PerfilPage() {
         }
         syncUserDataInSession({ id: userId })
 
-        const directUpload = await uploadProfileAvatarFile(token, userId, file)
+        const userType =
+          accountRole ??
+          (isProfessionalUser(perfilInfo?.profile_type)
+            ? "professional"
+            : "client")
+
+        const directUpload = await uploadProfileAvatarFile(
+          token,
+          userId,
+          file,
+          userType
+        )
+        const directUploadUrl = directUpload.success
+          ? directUpload.data.url
+          : null
+        const directUploadError = directUpload.success
+          ? null
+          : directUpload.error
         let avatarUrl: string | null = null
 
-        if (directUpload.success) {
-          avatarUrl = directUpload.data.url
+        if (directUploadUrl) {
+          avatarUrl = directUploadUrl
         } else if (dataUrl.length <= MAX_AVATAR_URL_LENGTH) {
           const avatarUpdate = await updateProfileAvatar(token, {
             user_id: userId,
             avatarUrl: dataUrl,
           })
           if (!avatarUpdate.success) {
-            toast.error(avatarUpdate.error || directUpload.error)
+            toast.error(
+              avatarUpdate.error ||
+                directUploadError ||
+                "Não foi possível atualizar a foto de perfil."
+            )
             setAvatarPreviewSrc("")
             return
           }
           avatarUrl = dataUrl
         } else {
           toast.error(
-            directUpload.error ||
+            directUploadError ||
               "Não foi possível enviar a foto: a imagem excede o limite de URL aceite."
           )
           setAvatarPreviewSrc("")
           return
         }
 
+        // Atualiza os restantes campos, mas mantém o URL acabado de enviar:
+        // o `action=me` pode ainda devolver o avatar antigo (cache/replicação)
+        // e faria a foto recém-carregada "reverter".
         const refreshedUrl = await refreshProfileSnapshot(token, userId)
-        if (refreshedUrl) avatarUrl = refreshedUrl
+        if (!directUploadUrl && refreshedUrl) avatarUrl = refreshedUrl
 
         if (avatarUrl) {
           setPerfilUser((prev) => ({
@@ -1375,7 +1469,7 @@ export default function PerfilPage() {
         setAvatarUploading(false)
       }
     },
-    [profileUserId, refreshProfileSnapshot, toast]
+    [accountRole, perfilInfo?.profile_type, profileUserId, refreshProfileSnapshot, toast]
   )
 
   const openAvatarFilePicker = useCallback(() => {
@@ -1419,6 +1513,21 @@ export default function PerfilPage() {
         if (!cancelled && apiProfile) {
           try {
             const mapped = mapProfileApiToPerfilUser(apiProfile)
+            const resolvedAvatar = await resolveStorageAssetUrl(
+              token,
+              mapped.avatar
+            )
+            if (resolvedAvatar) mapped.avatar = resolvedAvatar
+
+            const mappedInfo = mapProfileApiToPerfilInfo(apiProfile)
+            if (typeof mappedInfo.cove_image === "string") {
+              const resolvedCover = await resolveStorageAssetUrl(
+                token,
+                mappedInfo.cove_image
+              )
+              if (resolvedCover) mappedInfo.cove_image = resolvedCover
+            }
+
             setProfessionalId(extractProfessionalId(apiProfile))
             setPerfilUser((prev) => ({
               ...(prev ?? {}),
@@ -1426,7 +1535,7 @@ export default function PerfilPage() {
             }))
             setPerfilInfo((prev) => ({
               ...(prev ?? {}),
-              ...(mapProfileApiToPerfilInfo(apiProfile) as Partial<PerfilInfo>),
+              ...(mappedInfo as Partial<PerfilInfo>),
             }))
             const ratingFromProfile = extractRatingFromProfile(apiProfile)
             if (ratingFromProfile) {
