@@ -582,7 +582,7 @@ export default function ItemChatPage({
       }
 
       setSending(true);
-      const upload = await uploadChatMedia(token, file);
+      const upload = await uploadChatMedia(token, file, conversationId);
       if (!upload.success) {
         setSending(false);
         toast.error(upload.error);

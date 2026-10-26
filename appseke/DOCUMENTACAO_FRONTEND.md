@@ -467,7 +467,7 @@ Botões, inputs, dialogs, sheets, toast, skeleton, select, tooltip, password-inp
 - **Estado:** integrado com a Edge Function de mensagens (`{NEXT_PUBLIC_URL_API_AUTH}/chat?action=…`).
 - Cliente da API em `lib/chat-client.ts` (listar/criar conversas, listar/enviar/apagar mensagens, marcar como lida, arquivar).
 - Tipos de domínio em `types/chat.ts`; formatação de datas em `lib/chat-format.ts`.
-- Envio de texto, imagem (upload via `POST ?action=upload-media` na função do chat, multipart com campo `file`/`media`/`arquivo`, Bearer token) e localização; envio otimista com estados *pending*/*failed*.
+- Envio de texto, imagem (upload via `POST {NEXT_PUBLIC_URL_API_AUTH}/storage?action=upload-chat`, multipart com campo `file` + `conversationId`, Bearer token) e localização; envio otimista com estados *pending*/*failed*.
 - A imagem é enviada com `{ conversation_id, message_type: "image", media_url, content }`; o texto escrito no campo vai como legenda (`content`) e é limpo apenas quando o envio tem sucesso.
 - Atualização periódica (30 s para conversas, 15 s para a conversa aberta) em vez de WebSocket.
 - Widget flutuante montado em `components/layout/app-shell.tsx` (oculto em `/chat` e `/profissional/mensagens`), com contador de não lidas vindo da API.
@@ -484,7 +484,7 @@ Botões, inputs, dialogs, sheets, toast, skeleton, select, tooltip, password-inp
 **Autenticação e 401 (`lib/chat-client.ts`)**
 
 - O token usado é o access token do `iam-auth?action=login`, guardado em `sessionStorage.auth_token` e enviado em `Authorization: Bearer <token>` (é o mesmo token indicado no contrato da API, obtido via `iam-auth?action=login`).
-- Em **401** o cliente renova a sessão com o `refresh_token` (`iam-auth?action=refresh`) e **repete o pedido uma vez** — o access token tem validade curta e, sem esta renovação, uma sessão aberta há algum tempo falha em todas as ações de chat. O mesmo vale para o envio de media (`POST ?action=upload-media` na função do chat).
+- Em **401** o cliente renova a sessão com o `refresh_token` (`iam-auth?action=refresh`) e **repete o pedido uma vez** — o access token tem validade curta e, sem esta renovação, uma sessão aberta há algum tempo falha em todas as ações de chat. O mesmo vale para o envio de media (`POST {NEXT_PUBLIC_URL_API_AUTH}/storage?action=upload-chat`).
 - Se a renovação falhar, é devolvido o erro *"Sessão expirada ou inválida. Inicie sessão novamente."* e o utilizador tem de iniciar sessão outra vez.
 - Em desenvolvimento, o cliente escreve na consola um aviso com a data de expiração do token e a existência de `refresh_token`, para distinguir "token expirado" de "token rejeitado pelo serviço".
 - Variável opcional `NEXT_PUBLIC_SUPABASE_ANON_KEY`: quando definida, o header `apikey` também é enviado (a função aceita-o no CORS). Só é necessária se a função exigir a chave anónima para além do Bearer token.

@@ -32,6 +32,14 @@ export const CHAT_API_URL = AUTH_API_BASE
   ? `${AUTH_API_BASE.replace(/\/$/, "")}/chat`
   : null
 
+/**
+ * Edge Function de storage para mídia de conversas:
+ * `POST …/storage?action=upload-chat` (multipart `file` + `conversationId`).
+ */
+export const STORAGE_UPLOAD_CHAT_URL = AUTH_API_BASE
+  ? `${AUTH_API_BASE.replace(/\/$/, "")}/storage?action=upload-chat`
+  : null
+
 export type ChatOutcome<T> =
   | { success: true; data: T }
   | { success: false; error: string; statusCode?: number }
@@ -768,12 +776,52 @@ export async function deleteMessage(
 /* Upload de media (usado pelas mensagens de imagem)                           */
 /* -------------------------------------------------------------------------- */
 
+/** URL base do projeto Supabase (derivada da Edge Function configurada). */
+const SUPABASE_ORIGIN = (() => {
+  if (!AUTH_API_BASE) return ""
+  try {
+    return new URL(AUTH_API_BASE).origin
+  } catch {
+    return ""
+  }
+})()
+
+/** Bucket público usado pelo storage das conversas. */
+const CHAT_STORAGE_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim() || "Seke_storage"
+
+/**
+ * Converte um caminho devolvido pelo storage (`conversations/…/ficheiro.jpg`)
+ * na URL pública equivalente. Devolve `null` quando não é possível compor.
+ */
+function toPublicStorageUrl(storedPath: string): string | null {
+  const trimmed = storedPath.trim()
+  if (!trimmed) return null
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) {
+    return trimmed
+  }
+  if (!SUPABASE_ORIGIN) return null
+
+  const normalized = trimmed.replace(/^\/+/, "")
+  const objectPath = normalized.startsWith(`${CHAT_STORAGE_BUCKET}/`)
+    ? normalized.slice(CHAT_STORAGE_BUCKET.length + 1)
+    : normalized
+  if (!objectPath) return null
+
+  const encodedPath = objectPath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+  return `${SUPABASE_ORIGIN}/storage/v1/object/public/${CHAT_STORAGE_BUCKET}/${encodedPath}`
+}
+
 /** Extrai a URL do ficheiro de uma resposta de upload. */
 export function pickMediaUrlFromResponse(raw: unknown): string | null {
   const queue: Record<string, unknown>[] = []
   const root = toRecord(raw)
   if (root) queue.push(root)
   const seen = new Set<Record<string, unknown>>()
+  let storedPath: string | null = null
 
   while (queue.length > 0) {
     const node = queue.shift()!
@@ -789,12 +837,25 @@ export function pickMediaUrlFromResponse(raw: unknown): string | null {
       "image_url",
       "imageUrl",
       "secure_url",
+      "secureUrl",
       "public_url",
       "publicUrl",
-      "path",
+      "fullPath",
+      "full_path",
     ]) {
       const value = node[key]
-      if (typeof value === "string" && value.trim()) return value.trim()
+      if (typeof value === "string" && value.trim()) {
+        const resolved = toPublicStorageUrl(value)
+        if (resolved) return resolved
+      }
+    }
+
+    // Guarda o primeiro caminho relativo como último recurso.
+    if (!storedPath) {
+      const pathValue = node.path
+      if (typeof pathValue === "string" && pathValue.trim()) {
+        storedPath = pathValue
+      }
     }
 
     for (const key of ["data", "file", "upload", "result"]) {
@@ -803,15 +864,20 @@ export function pickMediaUrlFromResponse(raw: unknown): string | null {
     }
   }
 
-  return null
+  return storedPath ? toPublicStorageUrl(storedPath) : null
 }
 
-/** Envia um ficheiro para a Edge Function do chat via ?action=upload-media. */
+/**
+ * Envia um ficheiro para a Edge Function de storage
+ * (`POST …/storage?action=upload-chat`), em multipart:
+ * `file` (ficheiro) + `conversationId` (UUID da conversa).
+ */
 async function performMediaUpload(
   token: string,
-  file: File
+  file: File,
+  conversationId: string
 ): Promise<ChatOutcome<string>> {
-  if (!CHAT_API_URL) {
+  if (!STORAGE_UPLOAD_CHAT_URL) {
     return {
       success: false,
       error: "Configuração do serviço de mensagens incompleta.",
@@ -820,13 +886,11 @@ async function performMediaUpload(
   }
 
   const form = new FormData()
-  form.append("file", file, file.name)
-  form.append("media", file, file.name)
-  form.append("arquivo", file, file.name)
-  form.append("image", file, file.name)
+  form.append("file", file, file.name || "media")
+  form.append("conversationId", conversationId)
 
   try {
-    const res = await fetch(`${CHAT_API_URL}?action=upload-media`, {
+    const res = await fetch(STORAGE_UPLOAD_CHAT_URL, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -867,12 +931,13 @@ async function performMediaUpload(
 }
 
 /**
- * Envia um ficheiro para o endpoint de upload e devolve a URL pública.
+ * Envia um ficheiro para `/storage?action=upload-chat` e devolve a URL pública.
  * Em 401 renova a sessão e repete o envio uma vez.
  */
 export async function uploadChatMedia(
   token: string,
-  file: File
+  file: File,
+  conversationId: string
 ): Promise<ChatOutcome<string>> {
   const trimmedToken = token.trim()
   if (!trimmedToken) {
@@ -883,14 +948,31 @@ export async function uploadChatMedia(
     }
   }
 
-  const result = await performMediaUpload(trimmedToken, file)
+  const trimmedConversationId = conversationId.trim()
+  if (!trimmedConversationId) {
+    return {
+      success: false,
+      error: "Conversa inválida. Recarregue a página e tente novamente.",
+      statusCode: 400,
+    }
+  }
+
+  const result = await performMediaUpload(
+    trimmedToken,
+    file,
+    trimmedConversationId
+  )
   if (result.success || result.statusCode !== 401) return result
 
   reportUnauthorized("upload", trimmedToken)
 
   const freshToken = await renewToken(trimmedToken)
   if (freshToken) {
-    const retried = await performMediaUpload(freshToken, file)
+    const retried = await performMediaUpload(
+      freshToken,
+      file,
+      trimmedConversationId
+    )
     if (retried.success) return retried
     if (retried.statusCode !== 401) return retried
   }
