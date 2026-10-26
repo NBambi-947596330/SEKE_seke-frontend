@@ -1,12 +1,13 @@
 import type { ApiErrorResponse } from "@/types/auth"
+import { refreshStoredSession } from "@/lib/auth-client"
 import { parseLikedByMeFromPostLike } from "@/lib/parse-liked-by-me"
 import { parseMidiaTupleUrls, dedupeMediaUrls, normalizeHashtagLabel } from "@/lib/posts-client"
 import type { PostDetail } from "@/types/post"
 import type { GlobalFeedPagination, GlobalFeedResponse } from "@/types/feed"
 
 const FEED_GLOBAL_API = "/api/posts/posts"
-const FEED_MAIN_API = "/api/feed"
-const FEED_EXPLORE_API = "/api/feed/explore"
+/** Proxy para a Edge Function pública `iam-feed` (latest / trending). */
+const FEED_IAM_API = "/api/feed/iam"
 
 function parseNumberField(v: unknown): number | null {
   if (typeof v === "number" && !Number.isNaN(v)) return v
@@ -123,6 +124,7 @@ function parseFeedUser(
       "Utilizador"
     const avatar =
       pickString(u.avatar) ??
+      pickString(u.avatar_url) ??
       pickString(u.image) ??
       pickString(u.photo) ??
       null
@@ -145,7 +147,16 @@ function parseFeedUser(
     pickString(o.author_name) ??
     "Utilizador"
 
-  return { id, name, avatar: pickString(o.user_avatar) ?? pickString(o.avatar) }
+  return {
+    id,
+    name,
+    avatar:
+      pickString(o.user_avatar) ??
+      pickString(o.author_avatar) ??
+      pickString(o.avatar) ??
+      pickString(o.author_avatar_url) ??
+      null,
+  }
 }
 
 function parseFollowingAuthor(
@@ -360,6 +371,15 @@ function parsePagination(
     return normalizePagination(direct as Record<string, unknown>)
   }
 
+  // `iam-feed` devolve `{ success, data: { posts, pagination } }`.
+  const data = body.data
+  if (data && typeof data === "object") {
+    const nested = (data as Record<string, unknown>).pagination
+    if (nested && typeof nested === "object") {
+      return normalizePagination(nested as Record<string, unknown>)
+    }
+  }
+
   const meta = body.meta
   if (meta && typeof meta === "object") {
     const m = meta as Record<string, unknown>
@@ -568,43 +588,125 @@ export async function fetchGlobalFeed(
   return fetchFeedFromUrl(FEED_GLOBAL_API, options, false)
 }
 
+/** Ações públicas/personalizadas suportadas pela Edge Function `iam-feed`. */
+export type FeedIamAction = "latest" | "trending" | "my-feed"
+
 /**
- * GET /api/feed — feed público (token opcional; com sessão o backend pode personalizar).
+ * GET /api/feed/iam — feed pública da Edge Function `iam-feed`.
+ *
+ * - `action=latest` → publicações mais recentes
+ * - `action=trending` → publicações em alta
+ * - `action=my-feed` → feed personalizado (requer token)
+ */
+export async function fetchIamFeed(
+  action: FeedIamAction,
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchFeedFromUrl(
+    FEED_IAM_API,
+    {
+      ...options,
+      limit: options.limit ?? 20,
+      extraParams: { ...options.extraParams, action },
+    },
+    false
+  )
+}
+
+/** Feed das publicações mais recentes (`iam-feed?action=latest`). */
+export async function fetchLatestFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchIamFeed("latest", options)
+}
+
+/** Feed das publicações em alta (`iam-feed?action=trending`). */
+export async function fetchTrendingFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  return fetchIamFeed("trending", options)
+}
+
+/** Lê o access token guardado no `sessionStorage`. */
+function readStoredFeedToken(): string | null {
+  if (typeof window === "undefined") return null
+  const token = window.sessionStorage.getItem("auth_token")
+  return token && token.trim() ? token.trim() : null
+}
+
+/**
+ * Feed personalizado (`iam-feed?action=my-feed`) — requer sessão.
+ *
+ * Em **401** renova a sessão com o `refresh_token` e repete o pedido uma vez
+ * (o access token do `iam-auth` tem validade curta).
+ */
+export async function fetchMyFeed(
+  options: FetchGlobalFeedOptions = {}
+): Promise<FetchGlobalFeedOutcome> {
+  const token = options.token?.trim()
+  if (!token) {
+    return {
+      success: false,
+      error: "Inicie sessão para ver o seu feed.",
+      statusCode: 401,
+    }
+  }
+
+  const first = await fetchIamFeed("my-feed", options)
+  if (first.success || first.statusCode !== 401) return first
+
+  const refreshed = await refreshStoredSession()
+  if (!refreshed.success) return first
+
+  const freshToken = readStoredFeedToken()
+  if (!freshToken || freshToken === token) return first
+
+  return fetchIamFeed("my-feed", { ...options, token: freshToken })
+}
+
+/**
+ * GET /api/feed — feed público principal (alias de `iam-feed?action=latest`).
  */
 export async function fetchMainFeed(
   options: FetchGlobalFeedOptions = {}
 ): Promise<FetchGlobalFeedOutcome> {
-  return fetchFeedFromUrl(FEED_MAIN_API, options, false)
+  return fetchLatestFeed(options)
 }
 
 /**
- * GET /api/feed/explore — feed alternativo / explore (token opcional no proxy).
+ * GET /api/feed/explore — feed alternativo / explore (alias de
+ * `iam-feed?action=trending`).
  */
 export async function fetchExploreFeed(
   options: FetchGlobalFeedOptions = {}
 ): Promise<FetchGlobalFeedOutcome> {
-  return fetchFeedFromUrl(FEED_EXPLORE_API, options, false)
+  return fetchTrendingFeed(options)
 }
 
 /**
- * Feed da home: usa `/api/feed` (público). Em falha recuperável tenta explore
- * e depois a lista global (`/api/posts/posts`).
+ * Feed da home: com sessão usa sempre `iam-feed?action=my-feed`
+ * (personalizado, sem fallback público). Sem sessão usa `action=latest` e,
+ * em falha recuperável, `trending` e a lista global.
  */
 export async function fetchHomeFeed(
   options: FetchGlobalFeedOptions = {}
 ): Promise<FetchGlobalFeedOutcome> {
-  const main = await fetchMainFeed(options)
-  if (main.success) return main
+  if (options.token?.trim()) {
+    return fetchMyFeed(options)
+  }
 
-  if (shouldTryFeedFallback(main)) {
-    const explore = await fetchExploreFeed(options)
-    if (explore.success) return explore
+  const latest = await fetchLatestFeed(options)
+  if (latest.success) return latest
+
+  if (shouldTryFeedFallback(latest)) {
+    const trending = await fetchTrendingFeed(options)
+    if (trending.success) return trending
 
     const global = await fetchGlobalFeed(options)
     if (global.success) return global
   }
 
-  return main
+  return latest
 }
 
 const SEARCH_HASHTAG_API = "/api/posts/search/hashtag"

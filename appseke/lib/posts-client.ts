@@ -1,5 +1,7 @@
 import type { ApiErrorResponse } from "@/types/auth"
+import { refreshStoredSession } from "@/lib/auth-client"
 import { parseLikedByMeFromPostLike } from "@/lib/parse-liked-by-me"
+import { extractTokenExpiryFromJwt } from "@/lib/jwt-user-id"
 import { getStoredUserProfile, getStoredUserId } from "@/lib/viewer-user-id"
 import type {
   CreatePostRequest,
@@ -17,6 +19,22 @@ import type {
 
 const POSTS_API = "/api/posts"
 
+const SUPABASE_URL = "https://yxgziedppgpgcelpbesf.supabase.co"
+const SUPABASE_POSTS_CREATE_URL =
+  `${SUPABASE_URL}/functions/v1/posts?action=create`
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+const SUPABASE_STORAGE_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim() || "Seke_storage"
+const AUTH_API_BASE = process.env.NEXT_PUBLIC_URL_API_AUTH?.trim()
+/** Edge Function de posts: soft delete (`DELETE ?action=delete`, body `{ post_id }`). */
+const SUPABASE_POSTS_DELETE_URL = AUTH_API_BASE
+  ? `${AUTH_API_BASE.replace(/\/+$/, "")}/posts?action=delete`
+  : null
+/** Edge Function de storage: envia a mídia de uma publicação (`file` + `postId`). */
+const STORAGE_UPLOAD_POST_URL = AUTH_API_BASE
+  ? `${AUTH_API_BASE.replace(/\/+$/, "")}/storage?action=upload-post`
+  : `${SUPABASE_URL}/functions/v1/storage?action=upload-post`
+
 /**
  * Raiz da API externa (igual a `getBaseUrl()` nas API routes): costuma ser
  * `https://host.../api` — os paths de posts são relativos a isto (`/posts/...`).
@@ -26,7 +44,7 @@ const EXTERNAL_API_BASE_URL = (
   process.env.NEXT_PUBLIC_URL_API?.trim() || "https://api-seke-v1.onrender.com/api"
 ).replace(/\/+$/, "")
 
-const CREATE_POST_API = POSTS_API
+const CREATE_POST_API = SUPABASE_POSTS_CREATE_URL
 const ALL_MY_POSTS_API = `${EXTERNAL_API_BASE_URL}/posts/allmyposts`
 const PUBLISH_POST_API = `${EXTERNAL_API_BASE_URL}/posts/posts/setpublished`
 
@@ -338,6 +356,8 @@ function pickUploadedUrl(raw: unknown): string | null {
   const o = raw as Record<string, unknown>
 
   const directCandidates = [
+    o.publicUrl,
+    o.public_url,
     o.url,
     o.secure_url,
     o.secureUrl,
@@ -394,42 +414,415 @@ export async function uploadMediaToCloudinary(
   }
 }
 
+const toNonEmptyStringLocal = (value: unknown): string | null => {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+/** Gera um UUID para agrupar os ficheiros da publicação na pasta do Storage. */
+function generateUploadPostId(): string {
+  const cryptoObj = globalThis.crypto
+  if (cryptoObj && typeof cryptoObj.randomUUID === "function") {
+    try {
+      return cryptoObj.randomUUID()
+    } catch {
+      /* fallback abaixo */
+    }
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16)
+    const value = char === "x" ? random : (random & 0x3) | 0x8
+    return value.toString(16)
+  })
+}
+
+function resolveUploadPostError(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null
+  const root = raw as Record<string, unknown>
+  const error = root.error
+
+  if (typeof error === "string" && error.trim()) return error.trim()
+  if (error && typeof error === "object") {
+    const message = (error as Record<string, unknown>).message
+    if (typeof message === "string" && message.trim()) return message.trim()
+  }
+
+  for (const key of ["message", "msg"] as const) {
+    const value = root[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+
+  return null
+}
+
+/** Extrai a URL pública devolvida por `/storage?action=upload-post`. */
+function pickUploadPostUrl(raw: unknown): string | null {
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    return trimmed || null
+  }
+  if (!raw || typeof raw !== "object") return null
+
+  const root = raw as Record<string, unknown>
+  const data =
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : root
+
+  for (const key of [
+    "publicUrl",
+    "public_url",
+    "secure_url",
+    "secureUrl",
+    "url",
+    "media_url",
+    "mediaUrl",
+    "file_url",
+    "fileUrl",
+  ] as const) {
+    const value = data[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+
+  const storedPath = data.fullPath ?? data.full_path ?? data.path
+  if (typeof storedPath === "string" && storedPath.trim()) {
+    const normalized = storedPath.trim().replace(/^\/+/, "")
+    const objectPath = normalized.startsWith(`${SUPABASE_STORAGE_BUCKET}/`)
+      ? normalized.slice(SUPABASE_STORAGE_BUCKET.length + 1)
+      : normalized
+    const encodedPath = objectPath
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+    return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}/${encodedPath}`
+  }
+
+  return null
+}
+
 /**
- * Cria uma publicação (texto + media opcional via FormData).
- * Usa o token em sessionStorage (mesmo fluxo do login por credenciais).
+ * Envia os ficheiros da publicação para a Edge Function de storage
+ * (`POST …/storage?action=upload-post`), no formato multipart:
+ * `file` (ficheiro) + `postId` (UUID da publicação).
+ */
+async function uploadPostMediaToStorage(
+  files: File[],
+  token: string,
+  postId: string
+): Promise<
+  | { success: true; urls: string[] }
+  | { success: false; error: string; statusCode?: number }
+> {
+  if (files.length === 0) return { success: true, urls: [] }
+
+  const uploadedUrls: string[] = []
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    Authorization: `Bearer ${token}`,
+  }
+  if (SUPABASE_ANON_KEY) {
+    headers.apikey = SUPABASE_ANON_KEY
+  }
+
+  for (const file of files) {
+    const formData = new FormData()
+    formData.append("file", file, file.name || "media")
+    formData.append("postId", postId)
+
+    let res: Response
+    try {
+      res = await fetch(STORAGE_UPLOAD_POST_URL, {
+        method: "POST",
+        headers,
+        body: formData,
+      })
+    } catch {
+      return {
+        success: false,
+        error: "Não foi possível enviar a mídia. Verifique a ligação.",
+        statusCode: 0,
+      }
+    }
+
+    const raw = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error:
+          resolveUploadPostError(raw) ??
+          "Não foi possível enviar a mídia para o Storage.",
+        statusCode: res.status,
+      }
+    }
+
+    if (
+      raw &&
+      typeof raw === "object" &&
+      (raw as Record<string, unknown>).success === false
+    ) {
+      return {
+        success: false,
+        error:
+          resolveUploadPostError(raw) ??
+          "Não foi possível enviar a mídia para o Storage.",
+        statusCode: res.status,
+      }
+    }
+
+    const url = pickUploadPostUrl(raw)
+    if (!url) {
+      return {
+        success: false,
+        error: "O servidor não devolveu o endereço da mídia.",
+        statusCode: 502,
+      }
+    }
+
+    uploadedUrls.push(url)
+  }
+
+  return { success: true, urls: uploadedUrls }
+}
+
+/** Mensagem usada quando a Edge Function recusa o token da sessão. */
+const UNAUTHORIZED_MESSAGE =
+  "Sessão expirada ou inválida. Inicie sessão novamente."
+
+function readStoredAuthToken(): string | null {
+  if (typeof window === "undefined") return null
+  const token = window.sessionStorage.getItem("auth_token")
+  return token && token.trim() ? token.trim() : null
+}
+
+/** Renova a sessão (`iam-auth?action=refresh`) e devolve o novo access token. */
+async function renewPostToken(token: string): Promise<string | null> {
+  const refreshed = await refreshStoredSession()
+  if (!refreshed.success) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[posts] não foi possível renovar a sessão:",
+        refreshed.error ?? `HTTP ${refreshed.statusCode ?? "?"}`
+      )
+    }
+    return null
+  }
+
+  const freshToken = readStoredAuthToken()
+  if (!freshToken || freshToken === token.trim()) return null
+  return freshToken
+}
+
+/**
+ * Evita um 401 desnecessário: se o access token já expirou (ou expira em
+ * instantes), renova a sessão antes de enviar o pedido.
+ */
+async function resolvePostToken(token: string): Promise<string> {
+  const trimmed = token.trim()
+  const expiry = extractTokenExpiryFromJwt(trimmed)
+  if (!trimmed || !expiry || expiry > Date.now() + 10_000) return trimmed
+  return (await renewPostToken(trimmed)) ?? trimmed
+}
+
+/** Executa o POST de criação sem tratamento de 401. */
+async function requestCreatePost(
+  body: Record<string, unknown>,
+  token: string
+): Promise<{ res: Response; raw: unknown }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  }
+  if (SUPABASE_ANON_KEY) {
+    headers.apikey = SUPABASE_ANON_KEY
+  }
+
+  const res = await fetch(SUPABASE_POSTS_CREATE_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  })
+  const raw = await res.json().catch(() => ({}))
+  return { res, raw }
+}
+
+/** Payload aceite por `createPost` (inclui campos legados da API). */
+export type CreatePostPayload = CreatePostRequest & {
+  content_text?: string
+  /** Campo legado: lista de URLs de mídia (valores não-string são ignorados). */
+  media?: unknown
+}
+
+/**
+ * Cria uma publicação diretamente na Edge Function do Supabase
+ * POST https://yxgziedppgpgcelpbesf.supabase.co/functions/v1/posts?action=create
+ * Body: { content_text?, media_urls?, hashtags? }
+ * Requer Authorization: Bearer <token>
+ * A mídia é enviada antes para `/storage?action=upload-post` e as URLs
+ * públicas devolvidas são passadas em `media_urls`.
+ *
+ * Em **401** renova a sessão com o `refresh_token` e repete o pedido uma vez
+ * (o access token do `iam-auth` tem validade curta).
  */
 export async function createPost(
-  payload: CreatePostRequest,
+  payload: CreatePostPayload,
   token: string,
   mediaFiles: File[] = []
 ): Promise<CreatePostOutcome> {
-  const body = buildExternalCreatePostBody(payload)
-  const hasMedia = mediaFiles.length > 0
+  const content_text =
+    toNonEmptyStringLocal(payload.content_text) ??
+    toNonEmptyStringLocal(payload.content) ??
+    ""
 
-  const res = await fetch(CREATE_POST_API, {
-    method: "POST",
-    headers: hasMedia
-      ? { Authorization: `Bearer ${token}` }
-      : {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-    body: hasMedia
-      ? buildCreatePostFormData(body, mediaFiles)
-      : JSON.stringify(body),
-  })
+  const rawMediaUrls = Array.isArray(payload.media_urls)
+    ? payload.media_urls
+    : Array.isArray(payload.media)
+      ? payload.media
+      : []
 
-  const raw = await res.json().catch(() => ({}))
-  const data = raw as ApiErrorResponse
+  let media_urls = dedupeMediaUrls(
+    rawMediaUrls
+      .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+      .map((v) => v.trim())
+  )
 
-  if (!res.ok) {
-    const message =
-      "message" in data && typeof data.message === "string"
-        ? data.message
-        : "Não foi possível publicar. Tente novamente."
+  let accessToken = await resolvePostToken(token)
+
+  if (mediaFiles.length > 0) {
+    const uploadPostId = generateUploadPostId()
+    let uploadResult = await uploadPostMediaToStorage(
+      mediaFiles,
+      accessToken,
+      uploadPostId
+    )
+
+    if (!uploadResult.success && uploadResult.statusCode === 401) {
+      const freshToken = await renewPostToken(accessToken)
+      if (freshToken) {
+        accessToken = freshToken
+        uploadResult = await uploadPostMediaToStorage(
+          mediaFiles,
+          accessToken,
+          uploadPostId
+        )
+      }
+    }
+
+    if (!uploadResult.success) {
+      return {
+        success: false,
+        error:
+          uploadResult.statusCode === 401
+            ? UNAUTHORIZED_MESSAGE
+            : uploadResult.error,
+        ...(uploadResult.statusCode !== undefined
+          ? { statusCode: uploadResult.statusCode }
+          : {}),
+      }
+    }
+    media_urls = dedupeMediaUrls([...media_urls, ...uploadResult.urls])
+  }
+
+  if (!content_text && media_urls.length === 0) {
     return {
       success: false,
-      error: message,
+      error: "content_text ou media_urls são obrigatórios.",
+    }
+  }
+
+  let hashtags: string[] = []
+
+  const explicitHashtags = Array.isArray(payload.hashtags)
+    ? payload.hashtags
+    : []
+
+  if (explicitHashtags.length > 0) {
+    hashtags = [
+      ...new Set(
+        explicitHashtags
+          .filter((tag): tag is string => typeof tag === "string" && tag.trim() !== "")
+          .map((tag) => normalizeHashtagLabel(tag))
+          .filter((tag) => tag.length > 0)
+      ),
+    ]
+  } else if (content_text) {
+    hashtags = [
+      ...new Set(extractHashtagsFromContent(content_text).map(normalizeHashtagLabel)),
+    ]
+  }
+
+  const bodyToSend: Record<string, unknown> = {}
+
+  if (content_text) {
+    bodyToSend.content_text = content_text
+  }
+
+  if (media_urls.length > 0) {
+    bodyToSend.media_urls = media_urls
+  }
+
+  if (hashtags.length > 0) {
+    bodyToSend.hashtags = hashtags
+  }
+
+  if (typeof window !== "undefined") {
+    console.log("[createPost] Enviando para Edge Function:", {
+      url: SUPABASE_POSTS_CREATE_URL,
+      body: bodyToSend,
+    })
+  }
+
+  let { res, raw } = await requestCreatePost(bodyToSend, accessToken)
+
+  if (res.status === 401) {
+    const freshToken = await renewPostToken(accessToken)
+    if (freshToken) {
+      accessToken = freshToken
+      ;({ res, raw } = await requestCreatePost(bodyToSend, accessToken))
+    }
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      return {
+        success: false,
+        error: UNAUTHORIZED_MESSAGE,
+        statusCode: 401,
+      }
+    }
+
+    if (raw && typeof raw === "object") {
+      const obj = raw as Record<string, unknown>
+      if (obj.error && typeof obj.error === "object") {
+        const errObj = obj.error as Record<string, unknown>
+        if (typeof errObj.message === "string" && errObj.message) {
+          return {
+            success: false,
+            error: errObj.message,
+            statusCode: res.status,
+          }
+        }
+      }
+      if (typeof obj.message === "string" && obj.message) {
+        return {
+          success: false,
+          error: obj.message,
+          statusCode: res.status,
+        }
+      }
+      if (typeof obj.error === "string" && obj.error) {
+        return {
+          success: false,
+          error: obj.error,
+          statusCode: res.status,
+        }
+      }
+    }
+    return {
+      success: false,
+      error: "Não foi possível publicar. Tente novamente.",
       statusCode: res.status,
     }
   }
@@ -602,49 +995,152 @@ export async function updatePost(
   }
 }
 
+function readDeleteResponseMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null
+  const body = data as Record<string, unknown>
+
+  if (typeof body.message === "string" && body.message.trim()) {
+    return body.message.trim()
+  }
+
+  const error = body.error
+  if (typeof error === "string" && error.trim()) return error.trim()
+  if (error && typeof error === "object") {
+    const nested = (error as { message?: unknown }).message
+    if (typeof nested === "string" && nested.trim()) return nested.trim()
+  }
+
+  const inner = body.data
+  if (inner && typeof inner === "object") {
+    const nested = (inner as { message?: unknown }).message
+    if (typeof nested === "string" && nested.trim()) return nested.trim()
+  }
+
+  return null
+}
+
+/** Mapeia `error.code` das Edge Functions para o status HTTP equivalente. */
+function statusFromDeleteError(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null
+  const error = (data as { error?: unknown }).error
+  if (!error || typeof error !== "object") return null
+  const code = (error as { code?: unknown }).code
+  if (typeof code !== "string") return null
+  switch (code.toUpperCase()) {
+    case "UNAUTHORIZED":
+      return 401
+    case "FORBIDDEN":
+      return 403
+    case "NOT_FOUND":
+      return 404
+    case "BAD_REQUEST":
+      return 400
+    default:
+      return null
+  }
+}
+
+/** Executa o delete na Edge Function (ou no proxy, se a base não estiver configurada). */
+async function requestDeletePost(
+  postId: string,
+  token: string
+): Promise<{ res: Response; raw: unknown }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    Authorization: `Bearer ${token}`,
+  }
+  if (SUPABASE_ANON_KEY) {
+    headers.apikey = SUPABASE_ANON_KEY
+  }
+
+  const res = SUPABASE_POSTS_DELETE_URL
+    ? await fetch(SUPABASE_POSTS_DELETE_URL, {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify({ post_id: postId }),
+      })
+    : await fetch(`${POSTS_API}/${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+        headers,
+      })
+
+  const raw = await res.json().catch(() => ({}))
+  return { res, raw }
+}
+
 export type DeletePostOutcome =
   | { success: true; data: DeletePostResponse }
   | { success: false; error: string; statusCode?: number }
 
 /**
- * DELETE /api/posts/:id — apaga a própria publicação (Authorization obrigatório).
- * Resposta típica: `{ message: "Post deleted" }`.
+ * Apaga a própria publicação (soft delete).
+ *
+ * Chama diretamente a Edge Function:
+ * `DELETE {NEXT_PUBLIC_URL_API_AUTH}/posts?action=delete`
+ * com body `{ "post_id": "<id>" }` e `Authorization: Bearer <token>`.
+ * Apenas o autor ou um administrador pode apagar.
+ *
+ * Em **401** renova a sessão com o `refresh_token` e repete o pedido uma vez.
+ * Sem `NEXT_PUBLIC_URL_API_AUTH`, usa o proxy local `DELETE /api/posts/:id`.
  */
 export async function deletePost(
   postId: string,
   token: string
 ): Promise<DeletePostOutcome> {
-  const res = await fetch(`${POSTS_API}/${encodeURIComponent(postId)}`, {
-    method: "DELETE",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-  })
-
-  const raw = await res.json().catch(() => ({}))
-
-  if (res.ok) {
-    const data = raw as Partial<DeletePostResponse>
-    const message =
-      typeof data.message === "string" && data.message.trim()
-        ? data.message.trim()
-        : "Post deleted"
-    return {
-      success: true,
-      data: { message },
-    }
+  const trimmedId = postId.trim()
+  if (!trimmedId) {
+    return { success: false, error: "ID da publicação inválido." }
   }
 
-  const err = raw as ApiErrorResponse
-  const message =
-    typeof err.message === "string"
-      ? err.message
-      : "Não foi possível eliminar a publicação."
-  return {
-    success: false,
-    error: message,
-    statusCode: res.status,
+  let accessToken = await resolvePostToken(token)
+
+  try {
+    let { res, raw } = await requestDeletePost(trimmedId, accessToken)
+
+    if (res.status === 401) {
+      const freshToken = await renewPostToken(accessToken)
+      if (freshToken) {
+        accessToken = freshToken
+        ;({ res, raw } = await requestDeletePost(trimmedId, accessToken))
+      }
+    }
+
+    const successFlag =
+      raw && typeof raw === "object"
+        ? (raw as { success?: unknown }).success
+        : undefined
+    const failed = !res.ok || successFlag === false
+
+    if (failed) {
+      const status = res.ok
+        ? statusFromDeleteError(raw) ?? 400
+        : res.status
+      const message =
+        status === 401
+          ? UNAUTHORIZED_MESSAGE
+          : status === 403
+            ? "Não tem permissão para eliminar esta publicação."
+            : readDeleteResponseMessage(raw) ??
+              "Não foi possível eliminar a publicação."
+      return {
+        success: false,
+        error: message,
+        statusCode: status,
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        message: readDeleteResponseMessage(raw) ?? "Post deleted",
+      },
+    }
+  } catch {
+    return {
+      success: false,
+      error: "Não foi possível contactar o servidor. Tente novamente.",
+    }
   }
 }
 
@@ -706,6 +1202,21 @@ function fallbackUserFromSession(): PostDetail["user"] {
  * @param contentFallback — texto enviado no PUT se a resposta não trouxer `content`
  * @param idFallback — id do URL se a resposta não trouxer `id`
  */
+function inferMediaKindFromUrl(url: string): "image" | "video" | null {
+  const lower = url.toLowerCase()
+  if (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(lower)) return "video"
+  if (/\.(jpg|jpeg|png|gif|webp|avif|svg)(\?|#|$)/i.test(lower)) return "image"
+  if (lower.includes("/video/upload/")) return "video"
+  if (lower.includes("/image/upload/")) return "image"
+  return null
+}
+
+function pickFlatId(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim()
+  if (typeof value === "number" && !Number.isNaN(value)) return String(value)
+  return null
+}
+
 function parsePostDetail(
   raw: unknown,
   contentFallback?: string,
@@ -737,7 +1248,6 @@ function parsePostDetail(
   } else if (contentFallback !== undefined) {
     content = contentFallback
   }
-  if (!content.trim()) return null
 
   const created_at = pickCreatedAt(o)
 
@@ -768,7 +1278,27 @@ function parsePostDetail(
       user = fallbackUserFromSession()
     }
   } else {
-    user = fallbackUserFromSession()
+    // Formato da Edge Function `posts?action=get`: autor em campos planos.
+    const flatId =
+      pickFlatId(o.author_id) ??
+      pickFlatId(o.authorId) ??
+      pickFlatId(o.user_id) ??
+      pickFlatId(o.userId)
+    const flatName =
+      toNonEmptyStringLocal(o.author_name) ??
+      toNonEmptyStringLocal(o.authorName) ??
+      toNonEmptyStringLocal(o.user_name) ??
+      toNonEmptyStringLocal(o.username)
+    const flatAvatar =
+      toNonEmptyStringLocal(o.author_avatar) ??
+      toNonEmptyStringLocal(o.authorAvatar) ??
+      toNonEmptyStringLocal(o.user_avatar) ??
+      toNonEmptyStringLocal(o.avatar)
+
+    user =
+      flatId && flatName
+        ? { id: flatId, name: flatName, avatar: flatAvatar ?? null }
+        : fallbackUserFromSession()
   }
 
   let likes = 0
@@ -820,7 +1350,9 @@ function parsePostDetail(
 
   if (mediaUrls.length > 0) {
     mediaUrl = mediaUrls[0]
-    if (!mediaType) mediaType = "image"
+    if (!mediaType) {
+      mediaType = inferMediaKindFromUrl(mediaUrls[0]) ?? "image"
+    }
   }
 
   if (!mediaUrl && image) {
@@ -828,6 +1360,9 @@ function parsePostDetail(
     mediaUrl = image
     if (mediaUrls.length === 0) mediaUrls = dedupeMediaUrls([image])
   }
+
+  // Publicações só com média (sem texto) continuam válidas.
+  if (!content.trim() && !mediaUrl) return null
 
   mediaUrls = dedupeMediaUrls([
     ...mediaUrls,
@@ -1129,10 +1664,13 @@ export async function fetchPostsByUserId(
 }
 
 /**
- * GET /api/posts/:id — ver uma publicação específica (proxy Next → API externa).
+ * GET /api/posts/:id — ver uma publicação específica.
+ *
+ * O proxy Next usa a Edge Function `posts?action=get&post_id=…` (resposta
+ * `{ success, data: { post } }`), com o formato legado como fallback.
  *
  * - `token` opcional: com `Authorization`, a API pode devolver `liked_by_me`.
- * - Resposta esperada: {@link PostDetail} (JSON plano ou envolto em `{ post }` / `{ data }`).
+ * - Resposta normalizada: {@link PostDetail}.
  */
 export async function fetchPostById(
   postId: string,

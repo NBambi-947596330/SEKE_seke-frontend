@@ -806,20 +806,32 @@ export function pickMediaUrlFromResponse(raw: unknown): string | null {
   return null
 }
 
-/** Envia um ficheiro para o endpoint de upload (sem tratamento de 401). */
+/** Envia um ficheiro para a Edge Function do chat via ?action=upload-media. */
 async function performMediaUpload(
   token: string,
   file: File
 ): Promise<ChatOutcome<string>> {
+  if (!CHAT_API_URL) {
+    return {
+      success: false,
+      error: "Configuração do serviço de mensagens incompleta.",
+      statusCode: 503,
+    }
+  }
+
   const form = new FormData()
+  form.append("file", file, file.name)
+  form.append("media", file, file.name)
   form.append("arquivo", file, file.name)
+  form.append("image", file, file.name)
 
   try {
-    const res = await fetch("/api/upload", {
+    const res = await fetch(`${CHAT_API_URL}?action=upload-media`, {
       method: "POST",
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
+        ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
       },
       body: form,
     })

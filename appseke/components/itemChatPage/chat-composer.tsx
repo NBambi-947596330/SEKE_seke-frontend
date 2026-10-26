@@ -16,7 +16,11 @@ interface ChatComposerProps {
   /** Placeholder do campo de texto. */
   placeholder?: string;
   onSendText: (content: string) => boolean | Promise<boolean>;
-  onSendImage: (file: File) => void;
+  /** `caption` é o texto escrito no campo, enviado como legenda da imagem. */
+  onSendImage: (
+    file: File,
+    caption?: string
+  ) => boolean | Promise<boolean>;
   onSendLocation: () => void;
 }
 
@@ -65,7 +69,10 @@ export default function ChatComposer({
     }
     setUploading(true);
     try {
-      await onSendImage(file);
+      const caption = value.trim();
+      const sent = await onSendImage(file, caption || undefined);
+      // Mantém a legenda quando o envio falha, para poder tentar de novo.
+      if (sent) setValue("");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";

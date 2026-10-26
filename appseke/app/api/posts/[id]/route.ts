@@ -28,11 +28,47 @@ function resolveApiErrorMessage(data: unknown, fallback: string): string {
     if ("message" in data && typeof data.message === "string" && data.message) {
       return data.message
     }
-    if ("error" in data && typeof data.error === "string" && data.error) {
-      return data.error
+    if ("error" in data) {
+      const error = (data as { error?: unknown }).error
+      if (typeof error === "string" && error) {
+        return error
+      }
+      if (error && typeof error === "object" && "message" in error) {
+        const nested = (error as { message?: unknown }).message
+        if (typeof nested === "string" && nested) {
+          return nested
+        }
+      }
     }
   }
   return fallback
+}
+
+/** Mapeia `error.code` das Edge Functions para o status HTTP equivalente. */
+function statusFromErrorCode(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null
+  const error = (data as { error?: unknown }).error
+  if (!error || typeof error !== "object") return null
+  const code = (error as { code?: unknown }).code
+  if (typeof code !== "string") return null
+  switch (code.toUpperCase()) {
+    case "UNAUTHORIZED":
+      return 401
+    case "FORBIDDEN":
+      return 403
+    case "NOT_FOUND":
+      return 404
+    case "BAD_REQUEST":
+      return 400
+    default:
+      return null
+  }
+}
+
+/** Base da Edge Function de posts (`{NEXT_PUBLIC_URL_API_AUTH}`), se configurada. */
+function getAuthBaseUrl(): string | null {
+  const url = process.env.NEXT_PUBLIC_URL_API_AUTH?.trim()
+  return url ? url.replace(/\/+$/, "") : null
 }
 
 function guessFilenameFromUrl(url: string, index: number, contentType: string): string {
@@ -83,11 +119,16 @@ async function appendRemoteMediaUrls(
 }
 
 /**
- * GET /api/posts/:id — ver uma publicação específica (proxy → GET …/posts/:id).
+ * GET /api/posts/:id — ver uma publicação específica.
  *
- * - Header opcional: `Authorization: Bearer <token>` — repassado à API (ex. `liked_by_me`).
- * - Resposta de sucesso típica (JSON): `id`, `content`, `image`, `created_at`,
- *   `user: { id, name, avatar }`, `stats: { likes, comments }`, `liked_by_me?` (se logado).
+ * Usa a Edge Function `{NEXT_PUBLIC_URL_API_AUTH}/posts?action=get&post_id=…`
+ * quando configurada (resposta `{ success, data: { post } }`); caso contrário
+ * mantém o proxy legado para `{NEXT_PUBLIC_URL_API}/posts/:id`.
+ *
+ * - Header opcional: `Authorization: Bearer <token>` — repassado à API.
+ * - Resposta de sucesso típica: `id`, `content_text`, `media_urls`,
+ *   `author_id`, `author_name`, `author_avatar`, `likes_count`, `comments_count`,
+ *   `created_at`.
  */
 export async function GET(
   request: NextRequest,
@@ -103,10 +144,69 @@ export async function GET(
       )
     }
 
+    const authorization = request.headers.get("authorization")
+    const authBase = getAuthBaseUrl()
+
+    if (authBase) {
+      const qs = new URLSearchParams({
+        action: "get",
+        post_id: trimmed,
+      })
+      const url = `${authBase}/posts?${qs.toString()}`
+
+      const headers: HeadersInit = { Accept: "application/json" }
+      if (authorization?.toLowerCase().startsWith("bearer ")) {
+        headers.Authorization = authorization
+      }
+      const apikey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+      if (apikey) {
+        headers.apikey = apikey
+      }
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      })
+
+      const text = await res.text().catch(() => "")
+      let data: unknown = null
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text) as unknown
+        } catch {
+          data = null
+        }
+      }
+
+      if (!res.ok) {
+        const message =
+          res.status === 404
+            ? "Publicação não encontrada."
+            : resolveApiErrorMessage(
+                data,
+                "Não foi possível carregar a publicação."
+              )
+        return NextResponse.json(
+          { message } satisfies ApiErrorResponse,
+          { status: res.status }
+        )
+      }
+
+      if (data === null) {
+        return NextResponse.json(
+          { message: "Resposta inválida do servidor." } satisfies ApiErrorResponse,
+          { status: 502 }
+        )
+      }
+
+      return NextResponse.json(data)
+    }
+
+    // Compatibilidade: API externa antiga.
     const baseUrl = getBaseUrl()
     const url = `${baseUrl}/posts/${encodeURIComponent(trimmed)}`
 
-    const authorization = request.headers.get("authorization")
     const headers: HeadersInit = {
       Accept: "application/json",
     }
@@ -126,10 +226,8 @@ export async function GET(
       let message = "Publicação não encontrada."
       if (text.trim()) {
         try {
-          const errBody = JSON.parse(text) as { message?: string }
-          if (typeof errBody.message === "string" && errBody.message) {
-            message = errBody.message
-          }
+          const errBody = JSON.parse(text) as unknown
+          message = resolveApiErrorMessage(errBody, message)
         } catch {
           /* usar mensagem por defeito */
         }
@@ -380,7 +478,16 @@ export async function PUT(
   }
 }
 
-/** DELETE /api/posts/:id — proxy para DELETE /posts/:id (Authorization obrigatório). Sucesso típico: { message: "Post deleted" } */
+/**
+ * DELETE /api/posts/:id — apaga a própria publicação.
+ *
+ * Fallback do cliente: usa a Edge Function
+ * `{NEXT_PUBLIC_URL_API_AUTH}/posts?action=delete` (soft delete; apenas
+ * autor/admin) com `DELETE` e body `{ post_id }`.
+ *
+ * Sem `NEXT_PUBLIC_URL_API_AUTH`, mantém o proxy legado
+ * `DELETE {NEXT_PUBLIC_URL_API}/posts/:id`.
+ */
 export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -405,6 +512,49 @@ export async function DELETE(
       )
     }
 
+    const authBaseUrl = getAuthBaseUrl()
+
+    if (authBaseUrl) {
+      const url = `${authBaseUrl}/posts?action=delete`
+
+      // Endpoint documentado: DELETE ?action=delete com body { post_id }.
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: authorization,
+        },
+        body: JSON.stringify({ post_id: trimmedId }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      const successFlag =
+        data && typeof data === "object"
+          ? (data as { success?: unknown }).success
+          : undefined
+      const failed = !res.ok || successFlag === false
+
+      if (failed) {
+        return NextResponse.json(
+          {
+            message: resolveApiErrorMessage(
+              data,
+              "Não foi possível eliminar a publicação."
+            ),
+          } satisfies ApiErrorResponse,
+          {
+            status: res.ok
+              ? statusFromErrorCode(data) ?? 400
+              : res.status,
+          }
+        )
+      }
+
+      return NextResponse.json(data)
+    }
+
     const baseUrl = getBaseUrl()
     const url = `${baseUrl}/posts/${encodeURIComponent(trimmedId)}`
 
@@ -427,19 +577,13 @@ export async function DELETE(
     }
 
     if (!res.ok) {
-      let message = "Não foi possível eliminar a publicação."
-      if (
-        parsedBody &&
-        typeof parsedBody === "object" &&
-        parsedBody !== null &&
-        "message" in parsedBody &&
-        typeof (parsedBody as { message?: unknown }).message === "string"
-      ) {
-        message = (parsedBody as { message: string }).message
-      }
-
       return NextResponse.json(
-        { message } satisfies ApiErrorResponse,
+        {
+          message: resolveApiErrorMessage(
+            parsedBody,
+            "Não foi possível eliminar a publicação."
+          ),
+        } satisfies ApiErrorResponse,
         { status: res.status }
       )
     }

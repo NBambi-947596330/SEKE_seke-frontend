@@ -28,6 +28,7 @@ import { PostLikesTooltip } from "@/components/post-likes-tooltip/post-likes-too
 import { PostContentWithHashtags } from "@/components/post-content-with-hashtags/post-content-with-hashtags"
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
 import { PostVideoGallery } from "@/components/post-video-gallery/post-video-gallery"
+import { buildMessagesHref } from "@/lib/chat-href"
 import { buildDetalhesUserHref } from "@/lib/detalhes-user-href"
 import { likePost, unlikePost } from "@/lib/likes-client"
 import { collectPostImageUrls, deletePost, fetchPostById, dedupeMediaUrls } from "@/lib/posts-client"
@@ -80,6 +81,7 @@ export function ItemPostPublicacaoContent({
   onLikeResult,
 }: ItemPostPublicacaoContentProps) {
   const toast = useToast()
+  const router = useRouter()
   const viewerId = useViewerUserId()
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -91,6 +93,15 @@ export function ItemPostPublicacaoContent({
 
   const token = resolveAuthToken(accessToken)
   const isOwnPost = !!token && sameUserId(viewerId, post.user.id)
+
+  const handleContact = () => {
+    if (!token) {
+      toast.error("Inicie sessão para enviar mensagens.")
+      router.push("/auth/login")
+      return
+    }
+    router.push(buildMessagesHref({ id: post.user.id, name: post.user.name }))
+  }
 
   useEffect(() => {
     setLikedVisual(post.liked_by_me === true)
@@ -310,12 +321,8 @@ export function ItemPostPublicacaoContent({
           <PostShareMenu postId={post.id} title={post.content} />
         </div>
         {!isOwnPost ? (
-          <Button size="sm" className="text-xs" asChild>
-            <Link
-              href={buildDetalhesUserHref({ id: post.user.id, name: post.user.name })}
-            >
-              Contactar
-            </Link>
+          <Button size="sm" className="text-xs" onClick={handleContact}>
+            Contactar
           </Button>
         ) : null}
       </CardFooter>

@@ -125,6 +125,8 @@ export function ProfileUserPostsPanel({
   )
 
   useEffect(() => {
+    // Carga inicial: efeito de dados (setState assíncrono após fetch).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPosts(1, false)
   }, [loadPosts])
 

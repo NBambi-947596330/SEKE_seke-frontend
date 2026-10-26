@@ -15,6 +15,7 @@ import { PostExpandableContent } from "@/components/post-expandable-content/post
 import { PostMediaGallery } from "@/components/post-media-gallery/post-media-gallery"
 import { PostVideoGallery } from "@/components/post-video-gallery/post-video-gallery"
 import { useToast } from "@/components/ui/toaster"
+import { buildMessagesHref } from "@/lib/chat-href"
 import { buildDetalhesUserHref } from "@/lib/detalhes-user-href"
 import { followUser, unfollowUser } from "@/lib/follow-client"
 import { likePost, unlikePost } from "@/lib/likes-client"
@@ -133,6 +134,19 @@ export default function ItemPostProfissonal({
   const profileHref = authorUserId
     ? buildDetalhesUserHref({ id: authorUserId, name: nome })
     : "/detalhesuser"
+
+  const handleContact = useCallback(() => {
+    if (!authorUserId) {
+      router.push(profileHref)
+      return
+    }
+    if (!token) {
+      toast.error("Inicie sessão para enviar mensagens.")
+      router.push("/auth/login")
+      return
+    }
+    router.push(buildMessagesHref({ id: authorUserId, name: nome }))
+  }, [authorUserId, nome, profileHref, router, toast, token])
 
   const avatarSrc = resolveUserAvatarUrl(imagemPerfil)
   const normalizedMediaUrl = normalizeMediaSrc(mediaUrl)
@@ -474,6 +488,7 @@ export default function ItemPostProfissonal({
         {!isOwnPost ? (
           <button
             type="button"
+            onClick={handleContact}
             className="px-4 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-md transition-colors cursor-pointer hover:bg-primary/90"
           >
             Contactar

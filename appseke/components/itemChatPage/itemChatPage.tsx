@@ -565,19 +565,19 @@ export default function ItemChatPage({
   );
 
   const handleSendImage = useCallback(
-    async (file: File) => {
+    async (file: File, caption?: string): Promise<boolean> => {
       const token = getStoredToken();
-      if (!token) return;
+      if (!token) return false;
 
       // Imagem como primeira mensagem: cria primeiro a conversa.
       let conversationId = selectedId;
       if (!conversationId) {
-        if (!pendingTargetId) return;
+        if (!pendingTargetId) return false;
         setSending(true);
         conversationId = await createAndSelectConversation(pendingTargetId);
         if (!conversationId) {
           setSending(false);
-          return;
+          return false;
         }
       }
 
@@ -586,7 +586,7 @@ export default function ItemChatPage({
       if (!upload.success) {
         setSending(false);
         toast.error(upload.error);
-        return;
+        return false;
       }
 
       // O token pode ter sido renovado durante o upload (401 → refresh).
@@ -595,12 +595,13 @@ export default function ItemChatPage({
         conversationId,
         type: "image",
         mediaUrl: upload.data,
+        content: caption?.trim() || undefined,
       });
       setSending(false);
 
       if (!result.success) {
         toast.error(result.error);
-        return;
+        return false;
       }
       if (result.data) {
         updateThread(conversationId, (current) => ({
@@ -611,6 +612,7 @@ export default function ItemChatPage({
       void (async () => {
         await loadConversations("silent");
       })();
+      return true;
     },
     [selectedId, pendingTargetId, createAndSelectConversation, loadConversations, updateThread]
   );
@@ -806,7 +808,7 @@ export default function ItemChatPage({
                 disabled={!selectedId || sending}
                 sending={sending}
                 onSendText={handleSendText}
-                onSendImage={(file) => void handleSendImage(file)}
+                onSendImage={handleSendImage}
                 onSendLocation={() => void handleSendLocation()}
               />
             </>
@@ -844,7 +846,7 @@ export default function ItemChatPage({
                 disabled={sending}
                 sending={sending}
                 onSendText={handleSendText}
-                onSendImage={(file) => void handleSendImage(file)}
+                onSendImage={handleSendImage}
                 onSendLocation={() => void handleSendLocation()}
               />
             </>

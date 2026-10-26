@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ApiErrorResponse } from "@/types/auth"
 import {
-  buildExternalCreatePostBody,
   extractHashtagsFromContent,
   normalizeHashtagLabel,
   parseHashtagsFromFormData,
-  appendHashtagsToFormData,
 } from "@/lib/posts-client"
 import type { CreatePostRequest } from "@/types/post"
 
-const getBaseUrl = (): string => {
-  const url = process.env.NEXT_PUBLIC_URL_API?.trim()
-  if (!url) {
-    throw new Error("NEXT_PUBLIC_URL_API não configurada no .env")
-  }
-  return url.replace(/\/+$/, "")
-}
+const SUPABASE_POSTS_CREATE_URL =
+  "https://yxgziedppgpgcelpbesf.supabase.co/functions/v1/posts?action=create"
 
 const toNonEmptyString = (value: unknown): string | null => {
   if (typeof value !== "string") return null
@@ -25,11 +18,15 @@ const toNonEmptyString = (value: unknown): string | null => {
 
 function resolveApiErrorMessage(data: unknown): string {
   if (data && typeof data === "object") {
-    if ("message" in data && typeof data.message === "string" && data.message) {
-      return data.message
+    const obj = data as Record<string, unknown>
+    if (typeof obj.message === "string" && obj.message) {
+      return obj.message
     }
-    if ("error" in data && typeof data.error === "string" && data.error) {
-      return data.error
+    if (typeof obj.error === "string" && obj.error) {
+      return obj.error
+    }
+    if (typeof obj.msg === "string" && obj.msg) {
+      return obj.msg
     }
   }
   return "Não foi possível criar a publicação."
@@ -48,12 +45,9 @@ async function forwardCreatePostResponse(res: Response) {
   return NextResponse.json(data)
 }
 
-/** POST /api/posts — proxy para POST …/posts na API externa */
+/** POST /api/posts — proxy para Supabase Edge Function (posts?action=create) */
 export async function POST(request: NextRequest) {
   try {
-    const baseUrl = getBaseUrl()
-    const postsEndpoint = `${baseUrl}/posts`
-
     const authorization = request.headers.get("authorization")
 
     if (!authorization || !authorization.toLowerCase().startsWith("bearer ")) {
@@ -74,50 +68,46 @@ export async function POST(request: NextRequest) {
         toNonEmptyString(formData.get("content_text")?.toString()) ??
         toNonEmptyString(formData.get("content")?.toString())
 
-      if (!content) {
+      const mediaUrls = formData
+        .getAll("media_urls")
+        .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+        .map((v) => v.trim())
+
+      if (!content && mediaUrls.length === 0) {
         return NextResponse.json(
-          { message: "O conteúdo da publicação é obrigatório." } satisfies ApiErrorResponse,
+          { message: "content_text ou media_urls são obrigatórios." } satisfies ApiErrorResponse,
           { status: 400 }
         )
       }
 
-      const visibilityRaw = formData.get("visibility")?.toString()
-      const visibility =
-        visibilityRaw === "private" ||
-        visibilityRaw === "followers" ||
-        visibilityRaw === "public"
-          ? visibilityRaw
-          : "public"
-
-      const hashtags = parseHashtagsFromFormData(formData, content)
-
-      const outgoing = new FormData()
-      outgoing.append("content_text", content)
-      outgoing.append("visibility", visibility)
-      appendHashtagsToFormData(outgoing, hashtags)
-
-      const seenMedia = new Set<string>()
-      for (const entry of formData.getAll("media")) {
-        if (entry instanceof Blob && entry.size > 0) {
-          const filename = entry instanceof File ? entry.name : "media"
-          const mediaKey = `${filename}:${entry.size}:${entry.type}`
-          if (seenMedia.has(mediaKey)) continue
-          seenMedia.add(mediaKey)
-          outgoing.append("media", entry, filename)
-        }
+      const hashtags = parseHashtagsFromFormData(formData, content ?? "")
+      const payload: Record<string, unknown> = {
+        content_text: content ?? "",
+        hashtags: [...new Set(hashtags.map(normalizeHashtagLabel).filter((t) => t.length > 0))],
       }
 
-      const res = await fetch(postsEndpoint, {
+      if (mediaUrls.length > 0) {
+        payload.media_urls = mediaUrls
+      }
+
+      const res = await fetch(SUPABASE_POSTS_CREATE_URL, {
         method: "POST",
-        headers: { Authorization: authorization },
-        body: outgoing,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authorization,
+        },
+        body: JSON.stringify(payload),
       })
 
       return forwardCreatePostResponse(res)
     }
 
-    const body = await request.json().catch(() => null) as
-      | (CreatePostRequest & { content_text?: string })
+    const body = (await request.json().catch(() => null)) as
+      | (CreatePostRequest & {
+          content_text?: string
+          media_urls?: string[]
+          hashtags?: string[]
+        })
       | null
 
     if (!body) {
@@ -128,52 +118,55 @@ export async function POST(request: NextRequest) {
     }
 
     const content =
-      toNonEmptyString(body.content_text) ?? toNonEmptyString(body.content)
-    if (!content) {
+      toNonEmptyString((body as any).content_text) ?? toNonEmptyString((body as any).content)
+
+    const mediaUrls = Array.isArray((body as any).media_urls)
+      ? ((body as any).media_urls as unknown[])
+          .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+          .map((v) => v.trim())
+      : []
+
+    if (!content && mediaUrls.length === 0) {
       return NextResponse.json(
-        { message: "O conteúdo da publicação é obrigatório." } satisfies ApiErrorResponse,
+        { message: "content_text ou media_urls são obrigatórios." } satisfies ApiErrorResponse,
         { status: 400 }
       )
     }
 
-    const payload: CreatePostRequest = {
-      content,
-      visibility:
-        body.visibility === "private" ||
-        body.visibility === "followers" ||
-        body.visibility === "public"
-          ? body.visibility
-          : "public",
-      hashtags: Array.isArray(body.hashtags)
-        ? body.hashtags
-            .filter(
-              (tag): tag is string => typeof tag === "string" && tag.trim() !== ""
-            )
-            .map(normalizeHashtagLabel)
-            .filter((tag) => tag.length > 0)
-        : extractHashtagsFromContent(content).map(normalizeHashtagLabel),
+    const hashtagsFromBody = Array.isArray((body as any).hashtags)
+      ? ((body as any).hashtags as unknown[])
+          .filter((tag): tag is string => typeof tag === "string" && tag.trim() !== "")
+          .map((tag) => normalizeHashtagLabel(tag))
+          .filter((tag) => tag.length > 0)
+      : []
+
+    const hashtags =
+      hashtagsFromBody.length > 0
+        ? [...new Set(hashtagsFromBody)]
+        : content
+          ? [...new Set(extractHashtagsFromContent(content).map(normalizeHashtagLabel))]
+          : []
+
+    const payload: Record<string, unknown> = {
+      content_text: content ?? "",
+      hashtags,
     }
 
-    const externalPayload = buildExternalCreatePostBody(payload)
+    if (mediaUrls.length > 0) {
+      payload.media_urls = mediaUrls
+    }
 
-    const res = await fetch(postsEndpoint, {
+    const res = await fetch(SUPABASE_POSTS_CREATE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: authorization,
       },
-      body: JSON.stringify(externalPayload),
+      body: JSON.stringify(payload),
     })
 
     return forwardCreatePostResponse(res)
   } catch (err) {
-    if (err instanceof Error && err.message.includes("NEXT_PUBLIC_URL_API")) {
-      return NextResponse.json(
-        { message: "Configuração do servidor incompleta." } satisfies ApiErrorResponse,
-        { status: 503 }
-      )
-    }
-
     return NextResponse.json(
       { message: "Erro interno ao criar publicação." } satisfies ApiErrorResponse,
       { status: 500 }

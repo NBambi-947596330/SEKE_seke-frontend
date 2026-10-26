@@ -423,6 +423,36 @@ function HomeInner() {
     [accountRole, isAuthenticated, router, toast, viewerUserId]
   );
 
+  const handleContactProfessional = useCallback(
+    (prof: ProfissionalFeedRow) => {
+      if (!isAuthenticated) {
+        toast.error('Inicie sessão para contactar o profissional.');
+        router.push('/auth/login');
+        return;
+      }
+
+      const professionalId = prof.authorUserId?.trim();
+      if (!professionalId) {
+        toast.error('Não foi possível identificar o profissional.');
+        return;
+      }
+
+      if (sameUserId(viewerUserId, professionalId)) {
+        toast.error('Não pode contactar-se a si próprio.');
+        return;
+      }
+
+      const params = new URLSearchParams({
+        userId: professionalId,
+        name: prof.nome?.trim() || 'Profissional',
+      });
+      const messagesPath =
+        accountRole === 'professional' ? '/profissional/mensagens' : '/chat';
+      router.push(`${messagesPath}?${params.toString()}`);
+    },
+    [accountRole, isAuthenticated, router, toast, viewerUserId]
+  );
+
   const solicitacoesRows: SolicitacaoFeedRow[] = useMemo(
     () => serviceRequests.map(serviceRequestToSolicitacaoRow),
     [serviceRequests]
@@ -812,6 +842,7 @@ function HomeInner() {
                     </div>
                     <button
                       type="button"
+                      onClick={() => handleContactProfessional(prof)}
                       className="text-xs text-[#2b81e5] font-medium hover:text-[#2b81e5]/80 transition-colors cursor-pointer"
                     >
                       Contactar
